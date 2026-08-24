@@ -213,6 +213,14 @@ const PATHS: Record<string, ReactNode> = {
       <circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
     </>
   ),
+  unlock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V8a4 4 0 0 1 7.7-1.6" />
+      <circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+    </>
+  ),
+  close: <path d="m6 6 12 12M18 6 6 18" />,
 };
 
 export function Icon({ name, size = 20, className = "" }: { name: string; size?: number; className?: string }) {

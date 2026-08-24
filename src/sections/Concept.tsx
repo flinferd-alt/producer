@@ -39,7 +39,7 @@ export default function Concept({ push }: { push: (t: string, tone?: Tone) => vo
               ))}
             </div>
             <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-mut">
-              Каждый этап оставляет данные в базах Yandex Cloud. От запуска к запуску ИИ не начинает с нуля: воронка, офферы и медиамикс
+              Каждый этап оставляет данные в PostgreSQL на Beget. От запуска к запуску ИИ не начинает с нуля: воронка, офферы и медиамикс
               корректируются на основе накопленной статистики — это и есть «обучающийся продюсер».
             </p>
           </Panel>
@@ -48,7 +48,7 @@ export default function Concept({ push }: { push: (t: string, tone?: Tone) => vo
 
       {/* architecture */}
       <section>
-        <Head kicker="Архитектура на Yandex Cloud" title="Четыре слоя системы" right={<Chip tone="mint">все данные — в РФ, 152-ФЗ</Chip>} />
+        <Head kicker="Архитектура · YandexGPT + Beget PostgreSQL" title="Четыре слоя системы" right={<Chip tone="mint">все данные — в РФ, 152-ФЗ</Chip>} />
         <div className="grid gap-3 lg:grid-cols-4">
           {ARCH_GROUPS.map((g, i) => (
             <Reveal key={g.title} delay={i * 90}>

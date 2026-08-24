@@ -31,7 +31,7 @@ export const TICKER = [
   "Финконтроль: ROMI кампании VK-lookalike 412% — рекомендовано масштабирование",
   "Медиабаер перераспределил 15% бюджета из Директа в VK",
   "Скрипт продаж: 14 диалогов, 3 оплаты, 5 в дожиме",
-  "ClickHouse: синхронизировано 128 400 событий за час",
+  "PostgreSQL на Beget: записано 128 400 событий за час",
   "Аналитик обнаружил просадку конверсии LP на мобильном −1,8 п.п.",
   "Трипваер принёс 41 580 ₽ за неделю без затрат на трафик",
 ];
@@ -163,7 +163,7 @@ export const AGENTS: Agent[] = [
     logs: ["12:05 пересобрал план недели: вебинар перенесён на чт 19:00", "11:47 поставил медиабаеру задачу: масштабировать VK-lookalike", "10:31 сверил юнит-экономику: CAC 3 191 ₽ при цели 4 000 ₽"],
   },
   {
-    id: "analyst", name: "Аналитик ниши", role: "Wordstat, конкуренты, сегменты ЦА, бенчмарки конверсий", model: "YandexGPT-5 · ClickHouse", status: "в работе", tasks: 46, load: 38, tone: "sky",
+    id: "analyst", name: "Аналитик ниши", role: "Wordstat, конкуренты, сегменты ЦА, бенчмарки конверсий", model: "YandexGPT-5 · PostgreSQL (Beget)", status: "в работе", tasks: 46, load: 38, tone: "sky",
     logs: ["12:01 обновил скоринг 5 конкурентов по 24 параметрам", "11:20 собрал 4 сегмента ЦА с болями и платёжеспособностью", "09:15 зафиксировал рост спроса «нейрофото» +34% за квартал"],
   },
   {
@@ -183,7 +183,7 @@ export const AGENTS: Agent[] = [
     logs: ["11:12 закрыл 9 тикетов, средний ответ 47 сек", "10:22 выдал доступы 4 новым ученикам", "09:40 оформил 1 возврат по регламенту"],
   },
   {
-    id: "fin", name: "Финконтроль", role: "ROMI, кассовые разрывы, чеки 54-ФЗ, резерв возвратов", model: "YandexGPT-5 · ClickHouse · ЮKassa", status: "в работе", tasks: 63, load: 31, tone: "mint",
+    id: "fin", name: "Финконтроль", role: "ROMI, кассовые разрывы, чеки 54-ФЗ, резерв возвратов", model: "YandexGPT-5 · PostgreSQL · ЮKassa", status: "в работе", tasks: 63, load: 31, tone: "mint",
     logs: ["11:57 ROMI VK-lookalike 412% — рекомендовал масштабирование", "10:55 сверил реестр ЮKassa: расхождений нет", "09:30 начислил резерв возвратов 5% (62 250 ₽)"],
   },
   {
@@ -341,20 +341,20 @@ export const PIPELINE = [
 export const ARCH_GROUPS = [
   { title: "Точки входа", tone: "sky" as Tone, items: ["Telegram-бот клиента", "Web-кабинет (этот интерфейс)", "Уведомления и approval в TG"] },
   { title: "Оркестратор ИИ", tone: "amber" as Tone, items: ["YandexGPT-5 — мозг агентов", "Cloud Functions — сценарии этапов", "Агентная шина: задачи и контекст", "Контур одобрений человеком"] },
-  { title: "Данные", tone: "mint" as Tone, items: ["Managed PostgreSQL — запуски, заказы", "ClickHouse — события, ROMI, когорты", "Object Storage — креативы, файлы"] },
+  { title: "Данные · Beget", tone: "mint" as Tone, items: ["PostgreSQL 16 — единая база сервиса", "Запуски, брифы, платежи, события, ROMI", "Автобэкапы каждые 6 часов + снапшоты", "phpPgAdmin, SSL, доступ по IP-вайтлисту"] },
   { title: "Интеграции", tone: "coral" as Tone, items: ["VK Ads API · Яндекс Директ API", "ЮKassa — платежи и чеки 54-ФЗ", "Яндекс Метрика — сквозная аналитика"] },
 ];
 
 export const ARCH_EXTRA = [
-  { title: "Lockbox", text: "Секреты и API-ключи" },
-  { title: "DataLens", text: "BI-дашборды для клиента" },
-  { title: "SpeechKit", text: "Голосовые распаковки" },
-  { title: "Yandex Queue", text: "Фоновые генерации" },
+  { title: "Beget VDS", text: "PostgreSQL 16 + хостинг фронтенда" },
+  { title: "Beget Functions", text: "API, вебхуки ЮKassa, cron-агенты" },
+  { title: "Lockbox", text: "Секреты и API-ключи интеграций" },
+  { title: "DataLens", text: "BI-дашборды поверх PostgreSQL" },
 ];
 
 export const PITFALLS = [
-  { tag: "Риск", tone: "coral" as Tone, title: "Галлюцинации LLM в цифрах", text: "Нейросеть умеет «придумывать» метрики. Решение: все цифры только из ClickHouse/PostgreSQL, LLM лишь интерпретирует и формулирует решения. Ключевые действия — через одобрение человеком." },
-  { tag: "Закон", tone: "amber" as Tone, title: "152-ФЗ: персональные данные", text: "Согласия при сборе лидов, хранение ПДн на серверах в РФ. Yandex Cloud закрывает требование по локализации, но тексты согласий и политики — обязательная часть воронок." },
+  { tag: "Риск", tone: "coral" as Tone, title: "Галлюцинации LLM в цифрах", text: "Нейросеть умеет «придумывать» метрики. Решение: все цифры только из PostgreSQL на Beget, LLM лишь интерпретирует и формулирует решения. Ключевые действия — через одобрение человеком." },
+  { tag: "Закон", tone: "amber" as Tone, title: "152-ФЗ: персональные данные", text: "Согласия при сборе лидов, хранение ПДн на серверах в РФ. Beget закрывает требование по локализации (дата-центры в Москве и СПб), но тексты согласий и политики — обязательная часть воронок." },
   { tag: "Закон", tone: "amber" as Tone, title: "54-ФЗ: чеки на каждый платёж", text: "ЮKassa в связке с облачной кассой отправляет чеки автоматически — на оплату, рассрочку и возврат. Без этого — штрафы и блокировка эквайринга." },
   { tag: "Деньги", tone: "mint" as Tone, title: "Возвраты и чарджбэки", text: "По инфопродуктам норма возвратов 2–5%. Закладываем резерв в финмодель и прописываем оферту: что именно считается оказанной услугой." },
   { tag: "Трафик", tone: "sky" as Tone, title: "Модерация и лимиты рекламных площадок", text: "VK и Директ отклоняют «заработок без усилий» и агрессивные обещания. Медиабаер-агент должен знать правила площадок и иметь запас креативов." },
@@ -385,10 +385,74 @@ export const LAUNCHES = [
 ];
 
 export const INTEGRATIONS = [
+  { name: "Beget PostgreSQL", desc: "Единая БД: запуски, платежи, события", on: true, tone: "mint" as Tone },
   { name: "ЮKassa", desc: "Платежи, рассрочка, чеки 54-ФЗ", on: true, tone: "mint" as Tone },
   { name: "VK Реклама API", desc: "Кампании, аудитории, ставки", on: true, tone: "sky" as Tone },
   { name: "Яндекс Директ API", desc: "Контекст и РСЯ", on: true, tone: "amber" as Tone },
   { name: "Яндекс Метрика", desc: "Сквозная аналитика, цели", on: true, tone: "sky" as Tone },
   { name: "Telegram Bot API", desc: "Канал клиента + скрипт продаж", on: true, tone: "sky" as Tone },
-  { name: "ClickHouse", desc: "Хранилище событий и ROMI", on: false, tone: "coral" as Tone },
+];
+
+/* ---------------- кабинет: production-настройки ---------------- */
+export interface DbConn {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  db: string;
+  user: string;
+  status: "online" | "offline" | "test";
+  ssl: boolean;
+  ping?: number;
+}
+
+export const DEFAULT_DB_CONNS: DbConn[] = [
+  { id: "db-prod", name: "neuroprod_main", host: "flinferd.beget.tech", port: 5432, db: "flinferd_prod", user: "flinferd_app", status: "online", ssl: true, ping: 14 },
+];
+
+export interface ApiToken {
+  id: string;
+  provider: string;
+  value: string;
+  added: string;
+}
+
+export const TOKEN_PROVIDERS = [
+  "Yandex Cloud · OAuth-токен",
+  "YandexGPT · API-ключ",
+  "Yandex Cloud · Folder ID",
+  "Yandex Cloud · ключ сервисного аккаунта",
+  "VK Реклама · токен кабинета",
+  "Яндекс Директ · OAuth-токен",
+  "ЮKassa · shopId",
+  "ЮKassa · секретный ключ",
+  "Telegram · токен бота",
+  "SMTP · пароль приложения",
+];
+
+export const DEFAULT_TOKENS: ApiToken[] = [
+  { id: "tk1", provider: "Yandex Cloud · Folder ID", value: "b1g7f3nq28ak92dme41s", added: "02 фев 2026" },
+  { id: "tk2", provider: "ЮKassa · shopId", value: "482913", added: "05 фев 2026" },
+];
+
+export const ENV_VARS = [
+  { k: "VITE_API_URL", v: "https://flinferd.ru/api", note: "адрес backend на Beget Functions" },
+  { k: "DATABASE_URL", v: "postgres://flinferd_app:••••••@flinferd.beget.tech:5432/flinferd_prod?sslmode=require", note: "только на backend — никогда не в бандл" },
+  { k: "YC_FOLDER_ID", v: "b1g7f3nq28ak92dme41s", note: "каталог Yandex Cloud для YandexGPT" },
+  { k: "YANDEX_GPT_API_KEY", v: "AQVN3a18••••••••••••", note: "API-ключ сервисного аккаунта" },
+  { k: "VK_ADS_TOKEN", v: "vkad••••••••••••91be", note: "токен кабинета VK Рекламы" },
+  { k: "DIRECT_OAUTH", v: "ydir••••••••••••4f08", note: "OAuth Яндекса для Директа" },
+  { k: "YOOKASSA_SECRET", v: "live_a9f3••••••••7d2c", note: "секретный ключ ЮKassa" },
+  { k: "TELEGRAM_BOT_TOKEN", v: "7841••••••:AAF••••••••", note: "бот клиента и скрипт продаж" },
+];
+
+export const PROD_CHECKLIST = [
+  { id: "ssl", title: "SSL на домене", desc: "Бесплатный Let's Encrypt в панели Beget → Разделы → SSL-сертификаты", done: true },
+  { id: "migrations", title: "Миграции БД", desc: "Прогнать schema.sql из README в phpPgAdmin: 24 таблицы, индексы, триггеры", done: true },
+  { id: "webhook", title: "Вебхук ЮKassa", desc: "https://flinferd.ru/api/webhooks/yookassa — платежи, возвраты, чеки", done: false },
+  { id: "cron", title: "Cron для агентов", desc: "*/15 * * * * — цикл оркестратора · 0 3 * * * — ночная сверка реестра", done: false },
+  { id: "smtp", title: "SMTP для писем", desc: "Почта домена: доступы ученикам, напоминания о вебинарах, дайджесты", done: false },
+  { id: "backup", title: "Автобэкапы БД", desc: "Панель Beget: ежедневные снапшоты PostgreSQL + копия во внешнее хранилище", done: true },
+  { id: "consents", title: "Согласия 152-ФЗ", desc: "Политика и оферта на каждом лендинге, чекбоксы с версионностью", done: false },
+  { id: "monitoring", title: "Мониторинг и алерты", desc: "Падение агентов, ошибки вебхуков, кассовые разрывы — алерты владельцу в Telegram", done: false },
 ];

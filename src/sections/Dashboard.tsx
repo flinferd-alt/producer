@@ -81,7 +81,7 @@ export default function Dashboard({ go, push }: { go: (id: string) => void; push
               Кампания <b>VK · Lookalike</b> показывает ROMI 412% при CPL 88 ₽. Предлагаю перенести туда <b className="text-amber">22 500 ₽</b> из Директа — прогноз <b className="text-mint">+31 лид</b> и <b className="text-mint">+54 000 ₽</b> выручки к 21-му дню.
             </p>
             <div className="mt-3 rounded-lg border border-line bg-deep/60 p-3 font-mono text-[11px] leading-relaxed text-mut">
-              расчёт: ClickHouse · 14 дней · доверие 0.87
+              расчёт: PostgreSQL · 14 дней · доверие 0.87
               <br />риск: истощение аудитории ~9 дней
             </div>
             <div className="mt-4 flex gap-2.5">

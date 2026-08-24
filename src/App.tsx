@@ -31,7 +31,7 @@ function Logo() {
         <div className="font-display text-[15px] font-extrabold tracking-tight leading-none text-ink">
           ПРОДЮСЕР<span className="text-amber">.AI</span>
         </div>
-        <div className="mt-1 font-mono text-[10px] tracking-[0.18em] text-dim uppercase">на Yandex Cloud</div>
+        <div className="mt-1 font-mono text-[10px] tracking-[0.18em] text-dim uppercase">YandexGPT · Beget DB</div>
       </div>
     </div>
   );
@@ -102,7 +102,12 @@ export default function App() {
                   >
                     <Icon name={n.icon} size={17} className={active ? "text-amber" : "text-dim group-hover:text-sky transition-colors"} />
                     {n.label}
-                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-amber" />}
+                    {n.id === "cabinet" && (
+                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход владельца">
+                        <Icon name="lock" size={11} className="text-amber/60" />
+                      </span>
+                    )}
+                    {active && <span className={`${n.id === "cabinet" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                   </button>
                 );
               })}
@@ -217,9 +222,9 @@ export default function App() {
 
         <footer className="border-t border-line/70 bg-deep2/50">
           <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 font-mono text-[10.5px] tracking-wide text-dim sm:px-6 lg:px-8">
-            <span className="flex items-center gap-2"><Dot tone="mint" pulse /> Yandex Cloud · ru-central1</span>
-            <span className="flex items-center gap-2"><Dot tone="amber" /> YandexGPT-5 · 42 ток/с</span>
-            <span className="flex items-center gap-2"><Dot tone="sky" /> ClickHouse · синхронизировано 128 400 событий</span>
+            <span className="flex items-center gap-2"><Dot tone="mint" pulse /> Beget VDS · PostgreSQL 16 · онлайн</span>
+            <span className="flex items-center gap-2"><Dot tone="amber" /> YandexGPT-5 · ru-central1 · 42 ток/с</span>
+            <span className="flex items-center gap-2"><Dot tone="sky" /> PostgreSQL · записано 128 400 событий</span>
             <span className="ml-auto flex items-center gap-2"><Dot tone="mint" /> 0 ошибок · аптайм 99,98%</span>
           </div>
         </footer>

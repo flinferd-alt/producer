@@ -29,7 +29,7 @@ export function StatsSection() {
         <Panel className="p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">ClickHouse · события каждые 60 секунд</div>
+              <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">PostgreSQL · таблица events · срез 60 сек</div>
               <div className="font-display text-lg font-bold">Выручка и расходы, тыс. ₽</div>
             </div>
             <div className="flex rounded-lg border border-line bg-deep/60 p-0.5">
@@ -196,7 +196,7 @@ export function AgentsSection({ push }: { push: (t: string, tone?: Tone) => void
                     {a.logs.map((l) => (
                       <div key={l} className="text-mut"><span className="text-sky">▸</span> {l}</div>
                     ))}
-                    <div className="text-dim">─ журнал пишется в ClickHouse ─</div>
+                    <div className="text-dim">─ журнал пишется в PostgreSQL (agent_logs) ─</div>
                   </div>
                 )}
               </Panel>

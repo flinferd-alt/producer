@@ -190,7 +190,7 @@ export default function Unpack({ go, push }: { go: (id: string) => void; push: (
             })}
           </ul>
           <div className="mt-4 rounded-lg border border-line bg-deep/60 p-3.5 font-mono text-[11px] leading-relaxed text-mut">
-            <span className="text-amber">хранение:</span> PostgreSQL · таблица briefs
+            <span className="text-amber">хранение:</span> Beget PostgreSQL · таблица briefs
             <br />
             <span className="text-amber">версии:</span> каждый запуск сохраняет свой бриф — ИИ сравнивает гипотезы от запуска к запуску
           </div>
