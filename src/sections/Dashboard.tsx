@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { FEED, KPIS, PIPELINE, type Tone } from "../data";
+import { useAuth, useStore } from "../store";
 import { Bar, Chip, Dot, Head, Icon, Num, Panel, Reveal, Spark, ToneBtn, useReducedMotion, TONE_TEXT, fmt } from "../ui";
 
 const SPARK_COLOR: Record<Tone, string> = { amber: "#ffb224", mint: "#3ddc97", coral: "#ff6a55", sky: "#5fb9ff", mut: "#5c7291" };
 
 export default function Dashboard({ go, push }: { go: (id: string) => void; push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
+  const { live } = useAuth();
+  const { real } = useStore();
   const [feed, setFeed] = useState(FEED);
+  const kpis = live ? real.kpis : KPIS;
 
   useEffect(() => {
     if (reduced) return;
@@ -18,7 +22,7 @@ export default function Dashboard({ go, push }: { go: (id: string) => void; push
     <div className="space-y-6">
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
-        {KPIS.map((k, i) => (
+        {kpis.map((k, i) => (
           <Reveal key={k.label} delay={i * 70}>
             <Panel hover className="relative overflow-hidden p-4">
               <div className="mb-1 font-mono text-[10.5px] tracking-[0.14em] text-dim uppercase">{k.label}</div>

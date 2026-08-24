@@ -21,6 +21,7 @@ export const NAV: NavItem[] = [
   { id: "agents", label: "AI-агенты", icon: "bot", group: "Данные" },
   { id: "concept", label: "Концепт и архитектура", icon: "schema", group: "Система" },
   { id: "cabinet", label: "Кабинет", icon: "user", group: "Система" },
+  { id: "master", label: "Мастер-панель", icon: "shield", group: "Система" },
 ];
 
 export const TICKER = [

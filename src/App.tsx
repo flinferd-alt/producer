@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LAUNCHES, NAV, TICKER, type Tone } from "./data";
 import { Chip, Dot, Icon, ToneBtn, useScramble } from "./ui";
+import { DataProvider, useAuth } from "./store";
 import Dashboard from "./sections/Dashboard";
 import Unpack from "./sections/Unpack";
 import Niche from "./sections/Niche";
@@ -9,6 +10,7 @@ import Funnel from "./sections/Funnel";
 import { AdsSection, PaymentsSection } from "./sections/Growth";
 import { AgentsSection, StatsSection } from "./sections/Insights";
 import Cabinet from "./sections/Cabinet";
+import Master from "./sections/Master";
 import Concept from "./sections/Concept";
 
 interface Toast {
@@ -38,6 +40,15 @@ function Logo() {
 }
 
 export default function App() {
+  return (
+    <DataProvider>
+      <AppInner />
+    </DataProvider>
+  );
+}
+
+function AppInner() {
+  const { session, live, isOwner } = useAuth();
   const [section, setSection] = useState("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -45,6 +56,11 @@ export default function App() {
   const [launchOpen, setLaunchOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
   const toastId = useRef(0);
+
+  // если разлогинились, а открыта мастер-панель — возвращаем на обзор
+  useEffect(() => {
+    if (!isOwner && section === "master") setSection("dashboard");
+  }, [isOwner, section]);
 
   const push = useCallback((text: string, tone: Tone = "mint") => {
     const id = ++toastId.current;
@@ -87,10 +103,15 @@ export default function App() {
           <Logo />
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {groups.map((g) => (
+          {groups.map((g) => {
+            const items = NAV.filter((n) => n.group === g && (n.id !== "master" || isOwner));
+            if (items.length === 0) return null;
+            return (
             <div key={g} className="mb-5">
-              <div className="mb-1.5 px-2.5 font-mono text-[10px] tracking-[0.24em] text-dim uppercase">{g}</div>
-              {NAV.filter((n) => n.group === g).map((n) => {
+              <div className="mb-1.5 px-2.5 font-mono text-[10px] tracking-[0.24em] text-dim uppercase">
+                {g === "Система" && isOwner ? "Система · владелец" : g}
+              </div>
+              {items.map((n) => {
                 const active = n.id === section;
                 return (
                   <button
@@ -102,17 +123,23 @@ export default function App() {
                   >
                     <Icon name={n.icon} size={17} className={active ? "text-amber" : "text-dim group-hover:text-sky transition-colors"} />
                     {n.label}
-                    {n.id === "cabinet" && (
-                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход владельца">
+                    {n.id === "cabinet" && !live && (
+                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход">
                         <Icon name="lock" size={11} className="text-amber/60" />
                       </span>
                     )}
-                    {active && <span className={`${n.id === "cabinet" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
+                    {n.id === "master" && (
+                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Только владелец">
+                        <Icon name="crown" size={11} className="text-mint/70" />
+                      </span>
+                    )}
+                    {active && <span className={`${n.id === "cabinet" || n.id === "master" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                   </button>
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
         <div className="border-t border-line px-5 py-4">
           <div className="flex items-center gap-2.5">
@@ -146,7 +173,18 @@ export default function App() {
               </h1>
             </div>
             <div className="ml-auto flex items-center gap-3">
-              <Chip tone="amber" className="hidden sm:inline-flex">Бюджет: 150 000 ₽</Chip>
+              {isOwner ? (
+                <button onClick={() => go("master")} className="hidden cursor-pointer items-center gap-1.5 rounded-md border border-mint/35 bg-mint/10 px-2.5 py-1 font-mono text-[11px] leading-5 tracking-wide text-mint transition-all hover:bg-mint/20 sm:inline-flex" title="Мастер-панель владельца">
+                  <Icon name="crown" size={12} /> ВЛАДЕЛЕЦ · LIVE
+                </button>
+              ) : live ? (
+                <Chip tone="mint" className="hidden sm:inline-flex"><Dot tone="mint" pulse /> LIVE · реальные данные</Chip>
+              ) : (
+                <button onClick={() => go("cabinet")} className="hidden cursor-pointer items-center gap-1.5 rounded-md border border-amber/35 bg-amber/10 px-2.5 py-1 font-mono text-[11px] leading-5 tracking-wide text-amber transition-all hover:bg-amber/20 sm:inline-flex" title="Войти, чтобы видеть реальные данные">
+                  <Icon name="eye" size={12} /> ДЕМО-ДАННЫЕ
+                </button>
+              )}
+              <Chip tone="amber" className="hidden md:inline-flex">Бюджет: 150 000 ₽</Chip>
               <div className="relative" ref={dropRef}>
                 <button
                   onClick={() => setLaunchOpen((v) => !v)}
@@ -185,7 +223,13 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <div className="grid h-9 w-9 place-items-center rounded-full border border-line2 bg-panel2 font-display text-[12px] font-bold text-sky">АМ</div>
+              <button
+                onClick={() => go("cabinet")}
+                title={live ? session.name : "Войти в кабинет"}
+                className={`grid h-9 w-9 cursor-pointer place-items-center rounded-full border font-display text-[12px] font-bold transition-all hover:scale-105 ${isOwner ? "border-mint/40 bg-mint/15 text-mint" : live ? "border-sky/40 bg-sky/15 text-sky" : "border-line2 bg-panel2 text-dim"}`}
+              >
+                {isOwner ? "FL" : live ? "АМ" : <Icon name="user" size={15} />}
+              </button>
             </div>
           </div>
 
@@ -217,7 +261,8 @@ export default function App() {
           <div hidden={section !== "stats"}><StatsSection /></div>
           <div hidden={section !== "agents"}><AgentsSection push={push} /></div>
           <div hidden={section !== "concept"}><Concept push={push} /></div>
-          <div hidden={section !== "cabinet"}><Cabinet push={push} /></div>
+          <div hidden={section !== "cabinet"}><Cabinet push={push} go={go} /></div>
+          <div hidden={section !== "master"}><Master push={push} /></div>
         </main>
 
         <footer className="border-t border-line/70 bg-deep2/50">

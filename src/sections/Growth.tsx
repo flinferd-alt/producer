@@ -1,18 +1,36 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AD_CHANNELS, CAMPAIGNS, TARIFFS, TXS, type Tone } from "../data";
+import { useAuth, useStore } from "../store";
 import { Bar, Chip, Dot, Head, Icon, Num, Panel, Range, Reveal, Spark, ToneBtn, useReducedMotion, fmt } from "../ui";
 
-const BUDGET = 150000;
+const DEMO_BUDGET = 150000;
 
 /* ================= РЕКЛАМА ================= */
 export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
+  const { live } = useAuth();
+  const { real, set } = useStore();
   const [channels, setChannels] = useState(AD_CHANNELS);
+  const [budget, setBudget] = useState(DEMO_BUDGET);
   const [statuses, setStatuses] = useState<Record<string, boolean>>(() => Object.fromEntries(AD_CHANNELS.map((c) => [c.id, c.active])));
   const [campStatus, setCampStatus] = useState<Record<string, string>>(() => Object.fromEntries(CAMPAIGNS.map((c) => [c.id, c.status])));
   const animRef = useRef(0);
 
-  const totalSpend = channels.reduce((s, c) => s + (BUDGET * c.share) / 100, 0);
+  // live-режим: реальные каналы и бюджет из хранилища
+  useEffect(() => {
+    if (live) {
+      setChannels(real.ads);
+      setBudget(real.budget);
+      setStatuses(Object.fromEntries(real.ads.map((c) => [c.id, c.active])));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live]);
+
+  const persistAds = (next: typeof AD_CHANNELS) => {
+    if (live) set({ ads: next });
+  };
+
+  const totalSpend = channels.reduce((s, c) => s + (budget * c.share) / 100, 0);
   const totalLeads = channels.reduce((s, c) => s + c.leads, 0);
 
   const setShare = (id: string, v: number) => {
@@ -20,14 +38,18 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
       const others = cs.filter((c) => c.id !== id);
       const rest = 100 - v;
       const oldRest = others.reduce((s, c) => s + c.share, 0) || 1;
-      return cs.map((c) => (c.id === id ? { ...c, share: v } : { ...c, share: (c.share / oldRest) * rest }));
+      const next = cs.map((c) => (c.id === id ? { ...c, share: v } : { ...c, share: (c.share / oldRest) * rest }));
+      persistAds(next);
+      return next;
     });
   };
 
   const rebalance = () => {
     const target = channels.map((c) => c.recShare);
+    const rebalanced = channels.map((c, i) => ({ ...c, share: target[i] }));
     if (reduced) {
-      setChannels((cs) => cs.map((c, i) => ({ ...c, share: target[i] })));
+      setChannels(rebalanced);
+      persistAds(rebalanced);
       push("Медиабаер перераспределил бюджет по CPL и ROMI: прогноз +31 лид", "mint");
       return;
     }
@@ -38,8 +60,12 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
       const p = Math.min(1, (t - start) / 850);
       const e = 1 - Math.pow(1 - p, 3);
       setChannels((cs) => cs.map((c, i) => ({ ...c, share: from[i] + (target[i] - from[i]) * e })));
-      if (p < 1) animRef.current = requestAnimationFrame(tick);
-      else push("Медиабаер перераспределил бюджет по CPL и ROMI: прогноз +31 лид", "mint");
+      if (p < 1) {
+        animRef.current = requestAnimationFrame(tick);
+      } else {
+        persistAds(rebalanced);
+        push("Медиабаер перераспределил бюджет по CPL и ROMI: прогноз +31 лид", "mint");
+      }
     };
     animRef.current = requestAnimationFrame(tick);
   };
@@ -49,7 +75,7 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
       <Reveal>
         <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
           {[
-            { l: "Бюджет запуска", v: BUDGET, s: " ₽", tone: "text-amber" },
+            { l: "Бюджет запуска", v: budget, s: " ₽", tone: "text-amber" },
             { l: "Потрачено", v: totalSpend, s: " ₽", tone: "text-ink" },
             { l: "Лиды со всех каналов", v: totalLeads, s: "", tone: "text-sky" },
             { l: "Средний CPL", v: totalSpend / totalLeads, s: " ₽", tone: "text-mint" },
@@ -72,7 +98,7 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
             />
             <div className="space-y-4">
               {channels.map((c) => {
-                const spend = (BUDGET * c.share) / 100;
+                const spend = (budget * c.share) / 100;
                 const on = statuses[c.id];
                 return (
                   <div key={c.id} className={`rounded-lg border p-4 transition-all duration-300 ${on ? "border-line bg-deep/40 hover:border-line2" : "border-line/60 bg-deep/20 opacity-55"}`}>
@@ -150,6 +176,9 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
 
 /* ================= ОПЛАТЫ ================= */
 export function PaymentsSection({ push }: { push: (t: string, tone?: Tone) => void }) {
+  const { live } = useAuth();
+  const { real } = useStore();
+  const txs = live ? real.txs : TXS;
   return (
     <div className="space-y-5">
       <Reveal>
@@ -193,7 +222,7 @@ export function PaymentsSection({ push }: { push: (t: string, tone?: Tone) => vo
                   </tr>
                 </thead>
                 <tbody>
-                  {TXS.map((t) => (
+                  {txs.map((t) => (
                     <tr key={t.id} className="border-b border-line/60 transition-colors last:border-0 hover:bg-panel2/40">
                       <td className="px-5 py-3">
                         <div className="font-mono text-[12px] text-ink">{t.id}</div>

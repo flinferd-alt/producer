@@ -1,13 +1,35 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FUNNEL_OPTIMIZED, FUNNEL_STAGES, FUNNEL_TIPS, type Tone } from "../data";
+import { useAuth, useStore } from "../store";
 import { Chip, Head, Icon, Panel, Range, Reveal, ToneBtn, useReducedMotion, fmt } from "../ui";
 
 export default function Funnel({ push }: { push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
+  const { live } = useAuth();
+  const { real, set } = useStore();
   const [stages, setStages] = useState(FUNNEL_STAGES);
   const [traffic, setTraffic] = useState(12000);
   const [price, setPrice] = useState(24900);
   const animRef = useRef(0);
+
+  // в live-режиме синхронизируемся с реальными данными из хранилища
+  useEffect(() => {
+    if (live) {
+      setStages(real.funnel);
+      setTraffic(real.traffic);
+      setPrice(real.price);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live]);
+
+  const persist = (patch: { stages?: typeof FUNNEL_STAGES; traffic?: number; price?: number }) => {
+    if (!live) return;
+    set({
+      ...(patch.stages ? { funnel: patch.stages } : {}),
+      ...(patch.traffic !== undefined ? { traffic: patch.traffic } : {}),
+      ...(patch.price !== undefined ? { price: patch.price } : {}),
+    });
+  };
 
   const reg = stages[0].value;
   const show = stages[1].value;
@@ -25,11 +47,17 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
   const romi = ((revenue - spend) / spend) * 100;
   const cac = sales > 0 ? spend / sales : 0;
 
-  const setStage = (id: string, v: number) => setStages((s) => s.map((x) => (x.id === id ? { ...x, value: v } : x)));
+  const setStage = (id: string, v: number) => {
+    const next = stages.map((x) => (x.id === id ? { ...x, value: v } : x));
+    setStages(next);
+    persist({ stages: next });
+  };
 
   const optimize = () => {
+    const optimized = stages.map((x) => ({ ...x, value: FUNNEL_OPTIMIZED[x.id] }));
     if (reduced) {
-      setStages((s) => s.map((x) => ({ ...x, value: FUNNEL_OPTIMIZED[x.id] })));
+      setStages(optimized);
+      persist({ stages: optimized });
       push("ИИ-оптимизация применена: +163 000 ₽ к прогнозу выручки", "mint");
       return;
     }
@@ -41,8 +69,12 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
       const p = Math.min(1, (t - start) / 900);
       const e = 1 - Math.pow(1 - p, 3);
       setStages((s) => s.map((x, i) => ({ ...x, value: from[i] + (to[i] - from[i]) * e })));
-      if (p < 1) animRef.current = requestAnimationFrame(tick);
-      else push("ИИ-оптимизация применена: +163 000 ₽ к прогнозу выручки", "mint");
+      if (p < 1) {
+        animRef.current = requestAnimationFrame(tick);
+      } else {
+        persist({ stages: optimized });
+        push("ИИ-оптимизация применена: +163 000 ₽ к прогнозу выручки", "mint");
+      }
     };
     animRef.current = requestAnimationFrame(tick);
   };
@@ -90,13 +122,13 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
               <div className="mb-2 flex items-center justify-between font-mono text-[11px] text-mut">
                 <span>Клики (трафик за запуск)</span><span className="text-amber">{fmt(traffic)}</span>
               </div>
-              <Range value={traffic} min={4000} max={40000} step={500} onChange={setTraffic} />
+              <Range value={traffic} min={4000} max={40000} step={500} onChange={(v) => { setTraffic(v); persist({ traffic: v }); }} />
             </div>
             <div className="rounded-lg border border-line bg-deep/40 p-4">
               <div className="mb-2 flex items-center justify-between font-mono text-[11px] text-mut">
                 <span>Цена курса</span><span className="text-amber">{fmt(price)} ₽</span>
               </div>
-              <Range value={price} min={9900} max={59900} step={100} onChange={setPrice} />
+              <Range value={price} min={9900} max={59900} step={100} onChange={(v) => { setPrice(v); persist({ price: v }); }} />
             </div>
           </div>
         </Panel>

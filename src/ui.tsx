@@ -221,6 +221,25 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  shield: (
+    <>
+      <path d="M12 3.5 5 6.2v5.2c0 4.6 3 7.6 7 9.1 4-1.5 7-4.5 7-9.1V6.2Z" />
+      <path d="m9.2 11.8 2 2 3.6-4.1" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M9.5 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h4" />
+      <path d="m15 8 4 4-4 4M19 12H9.5" />
+    </>
+  ),
+  crown: <path d="M4.5 16.5h15M5.5 16.5 4.5 8l4.4 3L12 5.5 15.1 11l4.4-3-1 8.5Z" />,
 };
 
 export function Icon({ name, size = 20, className = "" }: { name: string; size?: number; className?: string }) {
@@ -354,7 +373,7 @@ export function fmt(n: number) {
   return Math.round(n).toLocaleString("ru-RU");
 }
 
-export function ToneBtn({ children, onClick, tone = "amber", className = "" }: { children: ReactNode; onClick?: () => void; tone?: "amber" | "ghost" | "mint" | "coral"; className?: string }) {
+export function ToneBtn({ children, onClick, tone = "amber", className = "", disabled = false }: { children: ReactNode; onClick?: () => void; tone?: "amber" | "ghost" | "mint" | "coral"; className?: string; disabled?: boolean }) {
   const map = {
     amber: "bg-amber text-deep hover:brightness-110 shadow-[0_8px_24px_-10px_rgba(255,178,36,0.7)]",
     mint: "bg-mint text-deep hover:brightness-110 shadow-[0_8px_24px_-10px_rgba(61,220,151,0.6)]",
@@ -364,7 +383,8 @@ export function ToneBtn({ children, onClick, tone = "amber", className = "" }: {
   return (
     <button
       onClick={onClick}
-      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 font-mono text-[12px] font-semibold tracking-wide uppercase transition-all duration-300 active:scale-[0.97] ${map[tone]} ${className}`}
+      disabled={disabled}
+      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 font-mono text-[12px] font-semibold tracking-wide uppercase transition-all duration-300 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 ${map[tone]} ${className}`}
     >
       {children}
     </button>
