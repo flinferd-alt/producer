@@ -7,8 +7,11 @@ import {
 /* ---------------- доступ ---------------- */
 export type Role = "guest" | "user" | "owner";
 
-export const OWNER_LOGIN = "Flinferd";
+// ЛОГИН ВЛАДЕЛЬЦА ВСЕГДА С МАЛЕНЬКОЙ БУКВЫ: flinferd
+// (проверка нечувствительна к регистру, для отображения используется OWNER_DISPLAY)
+export const OWNER_LOGIN = "flinferd";
 export const OWNER_PASS = "$Flin914101$";
+export const OWNER_DISPLAY = "Flinferd";
 export const USER_LOGIN = "expert";
 export const USER_PASS = "neuro2026";
 
@@ -23,6 +26,8 @@ interface AuthValue {
   live: boolean; // true = реальные данные (вошли в аккаунт)
   isOwner: boolean;
   loginAs: (login: string, pass: string) => { ok: boolean; role?: Role };
+  /** вход по ответу сервера (PHP API уже проверил пароль и выдал токен) */
+  applyApiUser: (login: string, role: Role) => void;
   logout: () => void;
 }
 
@@ -97,13 +102,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const loginAs = useCallback((login: string, pass: string) => {
     const l = login.trim();
-    if (l === OWNER_LOGIN && pass === OWNER_PASS) {
-      const s: Session = { role: "owner", login: l, name: "Flinferd · владелец" };
+    // регистр логина не важен: flinferd === Flinferd === FLINFERD
+    if (l.toLowerCase() === OWNER_LOGIN.toLowerCase() && pass === OWNER_PASS) {
+      const s: Session = { role: "owner", login: OWNER_DISPLAY, name: "Flinferd · владелец" };
       setSession(s);
       localStorage.setItem(LS_AUTH, JSON.stringify(s));
       return { ok: true, role: "owner" as Role };
     }
-    if (l === USER_LOGIN && pass === USER_PASS) {
+    if (l.toLowerCase() === USER_LOGIN.toLowerCase() && pass === USER_PASS) {
       const s: Session = { role: "user", login: l, name: "Алексей Морозов · эксперт" };
       setSession(s);
       localStorage.setItem(LS_AUTH, JSON.stringify(s));
@@ -112,10 +118,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return { ok: false };
   }, []);
 
+  const applyApiUser = useCallback((login: string, role: Role) => {
+    const s: Session =
+      role === "owner"
+        ? { role: "owner", login: login || OWNER_DISPLAY, name: "Flinferd · владелец" }
+        : { role: "user", login, name: "Алексей Морозов · эксперт" };
+    setSession(s);
+    try {
+      localStorage.setItem(LS_AUTH, JSON.stringify(s));
+    } catch {
+      /* приватный режим */
+    }
+  }, []);
+
   const logout = useCallback(() => {
     const s: Session = { role: "guest", login: "", name: "" };
     setSession(s);
     localStorage.removeItem(LS_AUTH);
+    // серверные токены, выданные PHP API
+    localStorage.removeItem("pa_token");
+    localStorage.removeItem("pa_user");
   }, []);
 
   const set = useCallback((patch: Partial<RealData>) => {
@@ -128,9 +150,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       live: session.role !== "guest",
       isOwner: session.role === "owner",
       loginAs,
+      applyApiUser,
       logout,
     }),
-    [session, loginAs, logout],
+    [session, loginAs, applyApiUser, logout],
   );
 
   const store = useMemo<StoreValue>(() => ({ real, set }), [real, set]);

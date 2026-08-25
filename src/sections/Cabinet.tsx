@@ -1,7 +1,48 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LAUNCHES, type Tone } from "../data";
-import { useAuth, useStore, USER_LOGIN, USER_PASS } from "../store";
+import { applyApiSession, useAuth, useStore, OWNER_LOGIN, OWNER_PASS, USER_LOGIN, USER_PASS } from "../store";
 import { Bar, Chip, Dot, Head, Icon, Panel, Reveal, ToneBtn } from "../ui";
+
+/* -------- PHP API (Beget: public_html/api) -------- */
+const API_AUTH = "https://producer-ai.ru/api/auth.php";
+const API_LAUNCHES = "https://producer-ai.ru/api/launches.php";
+
+/* -------- запуски -------- */
+interface LaunchUI {
+  name: string;
+  expert: string;
+  stage: string;
+  progress: number;
+  status: string;
+  tone: Tone;
+  revenue: string;
+  romi: string;
+}
+
+interface ApiLaunch {
+  id?: string | number;
+  name?: string;
+  expert?: string;
+  stage?: string;
+  status?: string;
+  created_at?: string;
+}
+
+/** приводем строку из БД (id, name, expert, stage, status, created_at) к виду карточки */
+function normalizeApiLaunch(l: ApiLaunch): LaunchUI {
+  const status = (l.status ?? "планирование").toLowerCase();
+  const tone: Tone = status.includes("заверш") ? "mut" : status.includes("актив") ? "mint" : "amber";
+  return {
+    name: l.name || "Запуск без названия",
+    expert: l.expert || "—",
+    stage: l.stage || (l.created_at ? `создан ${new Date(l.created_at).toLocaleDateString("ru-RU")}` : "—"),
+    progress: status.includes("заверш") ? 100 : status.includes("актив") ? 57 : 18,
+    status: l.status || "планирование",
+    tone,
+    revenue: "—",
+    romi: "—",
+  };
+}
 
 /* ================= ЭКРАН ВХОДА (гость) ================= */
 function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
