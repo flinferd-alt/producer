@@ -1,0 +1,27 @@
+# ============================================================
+# api/.htaccess — pretty-URL для PHP-эндпоинтов.
+# Физические файлы: launches.php, launches_detail.php, ...
+# Публичные адреса:  /api/launches, /api/launches/5/brief, /api/auth/refresh
+# ============================================================
+
+RewriteEngine On
+
+# авторизация
+RewriteRule ^auth/refresh$            auth/refresh.php        [L,QSA]
+RewriteRule ^auth/logout$             auth/logout.php         [L,QSA]
+RewriteRule ^auth$                    auth.php                [L,QSA]
+
+# запуски
+RewriteRule ^launches/([0-9]+)/brief$ launches_brief.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/niche$ launches_niche.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/plan$  launches_plan.php?id=$1  [L,QSA]
+RewriteRule ^launches/([0-9]+)$       launches_detail.php?id=$1 [L,QSA]
+RewriteRule ^launches$                launches.php             [L,QSA]
+
+# данные кабинета
+RewriteRule ^data$                    data.php                 [L,QSA]
+
+# служебное — закрыть от прямого доступа
+<FilesMatch "^(config|auth_helper|yandex_gpt)\.php$">
+    Require all denied
+</FilesMatch>

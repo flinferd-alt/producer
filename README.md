@@ -1,605 +1,318 @@
 # ПРОДЮСЕР.AI — сервис ИИ-продюсирования онлайн-курсов
 
-Полный цикл запуска онлайн-курса под управлением AI-агентов на **YandexGPT (Yandex Cloud)** с единой базой данных **PostgreSQL на хостинге Beget**:
-распаковка эксперта → анализ ниши и конкурентов → продукт и тарифы → лид-магнит и трипваер → воронка → реклама (VK Реклама, Яндекс Директ, Telegram Ads) → оплаты (ЮKassa, чеки 54-ФЗ) → аналитика → корректировка следующего запуска.
+Полный цикл запуска онлайн-курса под управлением AI-агентов: распаковка эксперта → анализ ниши → продукт → лид-магнит и трипваер → воронка → реклама → оплаты → аналитика → корректировка следующего запуска.
 
-- **Фронтенд**: React 18 + Vite + Tailwind CSS v4 (этот репозиторий)
-- **База данных**: PostgreSQL 16 на Beget (единственная БД сервиса)
-- **ИИ**: YandexGPT-5, YandexART (Yandex Cloud, зона `ru-central1`)
-- **Backend/API**: Beget Functions (serverless Node.js) — авторизация, вебхуки, cron-агенты
-- **Платежи**: ЮKassa + облачная касса (54-ФЗ)
+**Стек:**
+
+| Слой | Технология |
+|------|------------|
+| Фронтенд | React 18 + Vite + Tailwind CSS v4 (этот репозиторий) |
+| Backend | **PHP 8 на виртуальном хостинге Beget** (папка `public_html/api`), без Functions |
+| База данных | **PostgreSQL 16, хост `lipikomoufa.beget.app`** (единственная БД сервиса) |
+| ИИ | YandexGPT-5 (Yandex Cloud, `ru-central1`) |
+| Аутентификация | JWT (access 15 мин + refresh 30 дней) + bcrypt (cost 12) + rate-limit |
+| Платежи | ЮKassa + облачная касса (54-ФЗ) — вебхуки на backend |
 
 ---
 
 ## Содержание
 
-1. [Архитектура](#1-архитектура)
-2. [Модель доступа: демо → реальные → владелец](#2-модель-доступа-демо--реальные-данные--владелец)
+1. [Модель доступа и безопасность](#1-модель-доступа-и-безопасность)
+2. [Структура репозитория](#2-структура-репозитория)
 3. [Шаг 1. Beget: сайт + PostgreSQL](#3-шаг-1-beget-сайт--postgresql)
-4. [Шаг 2. Схема базы данных (SQL)](#4-шаг-2-схема-базы-данных)
-5. [Шаг 3. Yandex Cloud: YandexGPT и секреты](#5-шаг-3-yandex-cloud)
-6. [Шаг 4. Токены интеграций](#6-шаг-4-токены-интеграций)
-7. [Шаг 5. Backend на Beget Functions](#7-шаг-5-backend-на-beget-functions)
-8. [Шаг 6. Сборка и публикация фронтенда](#8-шаг-6-сборка-и-публикация-фронтенда)
-9. [Шаг 7. Cron, SMTP, бэкапы, мониторинг](#9-шаг-7-сервисные-задачи)
-10. [Безопасность и соответствие законам](#10-безопасность)
-11. [Кабинет: где что настраивается](#11-кабинет)
-12. [Troubleshooting](#12-troubleshooting)
-13. [Дорожная карта](#13-дорожная-карта)
+4. [Шаг 2. Переменные окружения (.env)](#4-шаг-2-переменные-окружения-env)
+5. [Шаг 3. Миграции БД](#5-шаг-3-миграции-бд)
+6. [Шаг 4. Создание владельца (bcrypt)](#6-шаг-4-создание-владельца-bcrypt)
+7. [Шаг 5. Composer (phpdotenv)](#7-шаг-5-composer-phpdotenv)
+8. [Шаг 6. Yandex Cloud: YandexGPT](#8-шаг-6-yandex-cloud-yandexgpt)
+9. [Шаг 7. Сборка и деплой фронтенда](#9-шаг-7-сборка-и-деплой-фронтенда)
+10. [API-справочник](#10-api-справочник)
+11. [Как фронтенд работает с данными](#11-как-фронтенд-работает-с-данными)
+12. [Cron, SMTP, бэкапы](#12-сервисные-задачи)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Дорожная карта](#14-дорожная-карта)
 
 ---
 
-## 1. Архитектура
+## 1. Модель доступа и безопасность
 
-```
-┌─────────────────┐    ┌──────────────────────┐    ┌────────────────────────┐
-│  Telegram-бот   │    │  Web-кабинет (React)  │    │  Лендинги воронок      │
-└────────┬────────┘    └──────────┬───────────┘    └───────────┬────────────┘
-         │                        │  HTTPS                     │
-         ▼                        ▼                            ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│  Beget Functions (Node.js): /api/auth, /api/launches, /api/webhooks,   │
-│  /api/cron/* — авторизация (JWT), бизнес-логика, вызовы YandexGPT      │
-└───────┬───────────────────────┬──────────────────────────┬─────────────┘
-        │ SQL (SSL)             │ HTTPS                    │ HTTPS
-        ▼                       ▼                          ▼
-┌──────────────────┐  ┌──────────────────┐  ┌───────────────────────────┐
-│ Beget PostgreSQL │  │ Yandex Cloud:    │  │ VK Ads API · Директ API · │
-│ 16 — единая БД   │  │ YandexGPT-5,     │  │ ЮKassa · Telegram ·       │
-│ (24 таблицы)     │  │ Lockbox, IAM     │  │ Яндекс Метрика            │
-└──────────────────┘  └──────────────────┘  └───────────────────────────┘
-```
+В коде **нет ни одного пароля** — ни на фронтенде, ни на backend. Проверка идёт только против bcrypt-хэша в таблице `users`.
 
-**Правило данных:** все цифры (лиды, платежи, ROMI) читаются только из PostgreSQL. YandexGPT лишь интерпретирует их и формулирует решения — так закрывается риск «галлюцинаций в цифрах».
+| Роль | Что видит | Данные |
+|------|-----------|--------|
+| **Гость** (не вошёл) | Витрина сервиса + экран входа | закрыты |
+| **Эксперт** (`role=user`) | Кабинет с реальными данными | PostgreSQL через API |
+| **Владелец** (`role=owner`) | + **Мастер-панель** (БД, токены, ключи, чек-лист) | + `PUT /api/data`, `POST /api/launches` |
+
+> Логин владельца — `flinferd` (строчными). Регистр не важен: backend сравнивает `lower(login)`, фронтенд — `toLowerCase()`. Пароль задаётся один раз скриптом (раздел 6) и хранится только в виде bcrypt-хэша.
+
+Механика сессии:
+
+- `POST /api/auth.php` — `password_verify()` против хэша → **access JWT (15 мин)** в теле ответа + **refresh JWT (30 дней)** в `httpOnly; Secure; SameSite=Strict` cookie с путём `/api/auth/`.
+- Refresh-токен в БД не хранится открыто — только `sha256`-хэш (`refresh_tokens`), при обновлении токен **ротируется** (старый отзывается).
+- **Rate-limit:** 5 неудачных попыток за 15 минут с одного IP → `429` (таблица `login_attempts`).
+- `POST /api/auth/refresh` — новый access по refresh-cookie; `POST /api/auth/logout` — отзыв refresh.
+- Все остальные эндпоинты требуют `Authorization: Bearer <access>`; общие функции — в `api/auth_helper.php` (`authenticate()` возвращает payload `user_id/login/role` или 401; `requireOwner()` — 403).
+- **CORS:** только домен из `ALLOWED_ORIGIN` (без `*`), все запросы с `credentials: include`.
+- Все SQL — подготовленные запросы (PDO). Конфигурация — только `.env` (закрыт в `.htaccess`).
+- Единый формат ответов: `{ success: true, data: ... }` / `{ success: false, error: "..." }` + коды 200/201/400/401/403/404/405/429/500.
 
 ---
 
-## 2. Модель доступа: демо → реальные данные → владелец
+## 2. Структура репозитория
 
-Сервис работает в трёх режимах, которые переключаются входом в «Кабинет»:
-
-| Режим | Кто видит | Данные | Что доступно |
-|-------|-----------|--------|--------------|
-| **Демо** | Гость (не вошёл) | Статичные демо-данные | Все 13 разделов; изменения не сохраняются |
-| **Реальные данные** | Эксперт (вошёл) | Из PostgreSQL (`localStorage` в прототипе) | KPI, воронка, реклама, оплаты — правки сохраняются |
-| **Владелец** | Владелец (вошёл) | Реальные + боевые настройки | Всё выше + **Мастер-панель**: базы Beget, токены Yandex Cloud, ключи, production-чеклист |
-
-Учётные записи (в прототипе — на клиенте, в `src/store.tsx`):
-
-| Роль | Логин | Пароль |
-|------|-------|--------|
-| Эксперт (реальные данные) | `expert` | `neuro2026` |
-| **Владелец** (+ мастер-панель) | `flinferd` | `$Flin914101$` |
-
-> **Правило проекта:** логин владельца везде пишется строчными — `flinferd` (PHP-скрипты, константа `OWNER_LOGIN` в `src/store.tsx`, кнопка «подставить», значения в localStorage). Проверка нечувствительна к регистру: `strtolower($login) === 'flinferd'` на backend, `login.toLowerCase()` на фронтенде. Для отображения в UI backend возвращает `login: "Flinferd"` с большой буквы.
-
-- Гость видит в шапке плашку **«ДЕМО-ДАННЫЕ»**, эксперт — **«LIVE · реальные данные»**, владелец — **«ВЛАДЕЛЕЦ · LIVE»**.
-- Раздел **«Мастер-панель»** появляется в меню только у владельца (иконка-корона); у эксперта вместо него — заглушка «доступно только владельцу».
-- Смена роли доступна кнопкой **«Выйти»** в кабинете.
-
-### Backend: PHP API на Beget (уже в работе)
-
-Вход и данные кабинета идут через реальные PHP-эндпоинты в `public_html/api/`:
-
-| Эндпоинт | Метод | Назначение |
-|----------|-------|------------|
-| `/api/auth.php` | POST `{login, password}` | Проверка владельца, выдача токена |
-| `/api/launches.php` | GET | Запуски из таблицы `launches` |
-
-Ключевые детали подключения к облачной PostgreSQL Beget (соблюдены в обоих файлах):
-
-- хост — **приватный IP `10.16.0.1`** (не публичный хост — так быстрее и не тарифицируется внешний трафик);
-- SSL включается через `putenv("PGSSLMODE=require")` **до** создания PDO; в DSN параметр `sslmode` не пишется (иначе PDO бросает «unrecognized configuration parameter»);
-- токен сессии — `bin2hex(openssl_random_pseudo_bytes(32))` (на хостинге старая версия PHP, `random_bytes` может отсутствовать);
-- фронтенд сохраняет `pa_token` и `pa_user` в localStorage; при «Выйти» они удаляются;
-- если API недоступен (локальная разработка, сеть), фронтенд делает fallback: вход по локальным константам, запуски — демо-массив `LAUNCHES` из `src/data.ts` (поэтому он не удаляется).
-
-> ⚠️ **Что усилить перед публичным запуском** (раздел [«Безопасность»](#10-безопасность)):
-> 1. В таблицу `users` закладывается **bcrypt-хэш** пароля (никогда не открытый текст и не MD5), роль — в колонке `role` (`user` / `owner`).
-> 2. Токен из `auth.php` заменить на **JWT с ролью** (access 15 мин + refresh 30 дней, httpOnly-cookie), проверку токена вынести в таблицу `sessions`.
-> 3. Rate-limit: 5 неудач → блокировка IP на 15 минут.
-> 4. В коде фронтенда константы `OWNER_LOGIN` / `OWNER_PASS` в `src/store.tsx` **удаляются** (локальный fallback отключается), доступ к мастер-разделам проверяется по `role` из JWT и на backend.
-
-Смена пароля сейчас: правится строка в `public_html/api/auth.php` (и `OWNER_PASS` в `src/store.tsx` для локального fallback). После перехода на `users` + bcrypt — только хэш в БД.
+```
+├── public_html/                ← содержимое копируется в корень сайта на Beget
+│   ├── .htaccess               SPA-роутинг + исключение /api + запрет .env
+│   ├── .env                    СЕКРЕТЫ (не коммитить!) — см. .env.example
+│   ├── .env.example            шаблон
+│   ├── index.html, assets/     сборка фронтенда (dist/)
+│   └── api/
+│       ├── .htaccess           pretty-URL → PHP-скрипты
+│       ├── config.php          env (phpdotenv), PDO, CORS, хелперы, дефолты
+│       ├── auth_helper.php     JWT HS256, authenticate(), requireOwner(), issueTokens()
+│       ├── yandex_gpt.php      callYandexGPT($prompt, $temperature = 0.3)
+│       ├── auth.php            вход (bcrypt + rate-limit + JWT)
+│       ├── auth/refresh.php    продление access-токена (ротация refresh)
+│       ├── auth/logout.php     отзыв refresh-токена
+│       ├── launches.php        GET список / POST создание (owner)
+│       ├── launches_detail.php GET /launches/{id} (бриф + ниша + план)
+│       ├── launches_brief.php  GET/POST бриф; POST генерирует summary в YandexGPT
+│       ├── launches_niche.php  GET/POST срез ниши + конкуренты
+│       ├── launches_plan.php   GET/POST воронка + тарифы + meta
+│       ├── data.php            GET/PUT данные кабинета (app_data, PUT — owner)
+│       └── composer.json       vlucas/phpdotenv
+├── sql/
+│   └── migrations_v2.sql       все таблицы (идемпотентна)
+├── scripts/
+│   └── create_owner.php        ОДНОРАЗОВЫЙ: владелец с bcrypt-хэшем (cost 12)
+└── src/                        React-приложение
+    ├── api.ts                  API-клиент (JWT, авто-refresh при 401)
+    ├── store.tsx               сессия + реальные данные (без демо-данных)
+    └── sections/               разделы кабинета
+```
 
 ---
 
 ## 3. Шаг 1. Beget: сайт + PostgreSQL
 
-1. **Тариф.** Подойдёт виртуальный хостинг с PostgreSQL или VDS (рекомендуется VDS от 2 ГБ RAM: PostgreSQL + Functions + фронтенд).
-2. **Домен и SSL.** Привяжите домен (например, `flinferd.ru`) в панели → *Домены и поддомены*. Выпустите бесплатный Let's Encrypt: *SSL-сертификаты → Let's Encrypt → выпустить для домена и www*.
-3. **Создание БД.** Панель Beget → *PostgreSQL* (или *Базы данных → PostgreSQL*):
-   - создайте базу `flinferd_prod`;
-   - создайте пользователя `flinferd_app` с надёжным паролем (24+ символов, сгенерируйте в менеджере паролей);
-   - выдайте пользователю права только на эту базу;
-   - включите **внешний доступ по SSL** и добавьте в белый список IP вашего VDS с Functions.
-4. **Данные подключения** (понадобятся для `.env`):
-   ```
-   Хост:       flinferd.beget.tech   (уточните в панели — может быть вида flinferd.ru или vds-xxxx)
-   Порт:       5432
-   База:       flinferd_prod
-   Пользователь: flinferd_app
-   SSL:        обязателен (?sslmode=require)
-   ```
-5. **Проверка.** В панели откройте **phpPgAdmin**, войдите под `flinferd_app` — если таблицы видны, доступ работает. Из терминала:
-   ```bash
-   psql "postgres://flinferd_app:ПАРОЛЬ@flinferd.beget.tech:5432/flinferd_prod?sslmode=require" -c "select now();"
-   ```
+1. Виртуальный хостинг Beget с PHP 8.x и расширением **pdo_pgsql** (панель → PHP → расширения; проверить: `<?php phpinfo(); ?>`).
+2. Раздел «PostgreSQL» → создать облачную БД:
+   - база `flinferd_prod`, пользователь `flinferd_app` (права на все таблицы),
+   - хост подключения — **`lipikomoufa.beget.app`**, порт `5432`, SSL обязателен.
+3. Домен `producer-ai.ru` привязать к сайту, выпустить бесплатный Lets Encrypt (Разделы → SSL).
+4. В phpPgAdmin убедиться, что схема из раздела 5 применена (22+ таблицы).
 
 ---
 
-## 4. Шаг 2. Схема базы данных
+## 4. Шаг 2. Переменные окружения (.env)
 
-Выполните скрипт целиком в **phpPgAdmin** (вкладка *SQL*) или через `psql -f schema.sql`. 24 таблицы закрывают весь цикл: распаковка, продукт, воронка, трафик, платежи, агенты, настройки.
+`public_html/.env` (создаётся на сервере из `.env.example`):
 
-```sql
--- ============================================================
--- ПРОДЮСЕР.AI · schema.sql · PostgreSQL 16 (Beget)
--- ============================================================
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+```ini
+APP_ENV=production
+ALLOWED_ORIGIN=https://producer-ai.ru
 
--- Автообновление updated_at
-CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
-BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+DB_HOST=lipikomoufa.beget.app
+DB_PORT=5432
+DB_NAME=flinferd_prod
+DB_USER=flinferd_app
+DB_PASS=<пароль пользователя БД>
+DB_SSLMODE=require
 
--- ---------- пользователи и сессии ----------
-CREATE TABLE users (
-  id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  login         text UNIQUE NOT NULL,
-  password_hash text NOT NULL,              -- bcrypt, cost 12
-  role          text NOT NULL DEFAULT 'owner',
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
-);
+# openssl rand -hex 32
+JWT_SECRET=<64 hex-символа>
+ACCESS_TTL=900          # 15 минут
+REFRESH_TTL=2592000     # 30 дней
 
-CREATE TABLE login_attempts (
-  id         bigserial PRIMARY KEY,
-  login      text NOT NULL,
-  ip         inet,
-  success    boolean NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Вставка владельца (хэш сгенерируйте: htpasswd -bnBC 12 "" '$Flin914101$' | tr -d ':\n')
--- INSERT INTO users (login, password_hash) VALUES ('Flinferd', '<ВСТАВЬТЕ_ХЭШ>');
-
--- ---------- запуски ----------
-CREATE TABLE launches (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name        text NOT NULL,
-  expert      text,
-  stage       text NOT NULL DEFAULT 'распаковка',
-  status      text NOT NULL DEFAULT 'планирование',  -- планирование|активен|завершён
-  template_id uuid REFERENCES launches(id),          -- шаблон предыдущего запуска
-  config      jsonb NOT NULL DEFAULT '{}',           -- параметры воронки, тарифов
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- распаковка (бриф) ----------
-CREATE TABLE briefs (
-  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id  uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  version    int  NOT NULL DEFAULT 1,
-  summary    jsonb NOT NULL DEFAULT '{}',   -- итоговый бриф от ИИ
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE brief_answers (
-  id        bigserial PRIMARY KEY,
-  brief_id  uuid NOT NULL REFERENCES briefs(id) ON DELETE CASCADE,
-  q_key     text NOT NULL,                  -- niche|expertise|audience|pain|...
-  question  text NOT NULL,
-  answer    text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- ниша и конкуренты ----------
-CREATE TABLE niche_snapshots (
-  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id  uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  score      int,
-  demand     int,                           -- показов/мес (Wordstat)
-  growth_pct numeric(5,1),
-  verdict    text,
-  data       jsonb NOT NULL DEFAULT '{}',   -- swot, сегменты, цены
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE competitors (
-  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id    uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  name         text NOT NULL,
-  students     int,
-  avg_check    int,
-  rating       numeric(3,1),
-  power        int,                          -- 0..100
-  weak_point   text,
-  scanned_at   timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- продукт ----------
-CREATE TABLE modules (
-  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id  uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  position   int NOT NULL,
-  title      text NOT NULL,
-  variant    text NOT NULL DEFAULT 'A'       -- A|B (сборки программы)
-);
-
-CREATE TABLE lessons (
-  id        uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  module_id uuid NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
-  position  int NOT NULL,
-  title     text NOT NULL,
-  duration  int                              -- минуты
-);
-
-CREATE TABLE tariffs (
-  id        uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  name      text NOT NULL,
-  kind      text NOT NULL DEFAULT 'core',    -- leadmagnet|tripwire|core|maximizer
-  price     int  NOT NULL,
-  features  jsonb NOT NULL DEFAULT '[]',
-  is_hot    boolean NOT NULL DEFAULT false
-);
-
--- ---------- воронка ----------
-CREATE TABLE funnel_stages (
-  id        uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  stage_key text NOT NULL,                   -- reg|show|stay|buy|trip
-  value     numeric(6,2) NOT NULL,
-  bench     numeric(6,2) NOT NULL
-);
-
-CREATE TABLE funnel_snapshots (
-  id         bigserial PRIMARY KEY,
-  launch_id  uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  clicks     int, registrations int, showed int, stayed int, sales int, trip_sales int,
-  revenue    numeric(12,2), spend numeric(12,2), romi numeric(8,1),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- трафик ----------
-CREATE TABLE campaigns (
-  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id  uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  channel    text NOT NULL,                  -- vk|direct|tg_ads|posevy
-  ext_id     text,                           -- id кампании в кабинете площадки
-  name       text NOT NULL,
-  budget     numeric(12,2),
-  status     text NOT NULL DEFAULT 'активна',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE ad_stats_daily (
-  id          bigserial PRIMARY KEY,
-  campaign_id uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  day         date NOT NULL,
-  spend       numeric(12,2), impressions int, clicks int, leads int, cpl numeric(10,2),
-  UNIQUE (campaign_id, day)
-);
-
-CREATE TABLE leads (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id   uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  campaign_id uuid REFERENCES campaigns(id),
-  contact     text,                          -- телефон/tg/email (шифруется в prod)
-  segment     text,
-  source      text, utm jsonb, click_id text,
-  status      text NOT NULL DEFAULT 'новый', -- новый|прогрев|горячий|купил|отказ
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- платежи ----------
-CREATE TABLE payments (
-  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id    uuid NOT NULL REFERENCES launches(id) ON DELETE CASCADE,
-  lead_id      uuid REFERENCES leads(id),
-  tariff_id    uuid REFERENCES tariffs(id),
-  yookassa_id  text UNIQUE,
-  amount       numeric(12,2) NOT NULL,
-  status       text NOT NULL DEFAULT 'в обработке', -- успешно|в обработке|возврат
-  method       text,
-  receipt_sent boolean NOT NULL DEFAULT false,      -- чек 54-ФЗ
-  created_at   timestamptz NOT NULL DEFAULT now(),
-  updated_at   timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- события (сквозная аналитика) ----------
-CREATE TABLE events (
-  id         bigserial PRIMARY KEY,
-  launch_id  uuid REFERENCES launches(id) ON DELETE CASCADE,
-  name       text NOT NULL,                  -- lp_view|register|webinar_join|purchase...
-  payload    jsonb NOT NULL DEFAULT '{}',
-  session_id text, click_id text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_events_launch_time ON events (launch_id, created_at DESC);
-
--- ---------- агенты ----------
-CREATE TABLE agent_tasks (
-  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  launch_id  uuid REFERENCES launches(id) ON DELETE CASCADE,
-  agent      text NOT NULL,                  -- orch|analyst|copy|media|sales|support|fin|art
-  title      text NOT NULL,
-  status     text NOT NULL DEFAULT 'в очереди', -- в очереди|в работе|готово|ошибка
-  needs_approval boolean NOT NULL DEFAULT false,
-  approved   boolean,
-  result     jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE agent_logs (
-  id         bigserial PRIMARY KEY,
-  agent      text NOT NULL,
-  level      text NOT NULL DEFAULT 'info',
-  message    text NOT NULL,
-  meta       jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- настройки и секреты ----------
-CREATE TABLE integrations (
-  id      serial PRIMARY KEY,
-  name    text UNIQUE NOT NULL,              -- ЮKassa|VK Реклама API|...
-  enabled boolean NOT NULL DEFAULT false,
-  config  jsonb NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE tokens (
-  id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  provider     text NOT NULL,                -- yandex_cloud|vk_ads|direct|yookassa|telegram
-  label        text NOT NULL,
-  value_enc    bytea NOT NULL,               -- pgp_sym_encrypt(value, ключ из окружения)
-  created_at   timestamptz NOT NULL DEFAULT now(),
-  rotated_at   timestamptz
-);
-
-CREATE TABLE settings (
-  key        text PRIMARY KEY,
-  value      jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
--- ---------- триггеры updated_at ----------
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['users','launches','briefs','campaigns','leads','payments',
-                           'agent_tasks','funnel_stages','settings','integrations']
-  LOOP
-    EXECUTE format('CREATE TRIGGER trg_%I_updated BEFORE UPDATE ON %I
-                    FOR EACH ROW EXECUTE FUNCTION set_updated_at()', t, t);
-  END LOOP;
-END $$;
+YC_FOLDER_ID=<folder id>
+YANDEX_GPT_API_KEY=<API-ключ сервисного аккаунта>
+YC_MODEL=yandexgpt/latest
 ```
 
-**Сиды после наката схемы:**
+Важные детали подключения к БД (уже учтены в `config.php`):
 
-```sql
-INSERT INTO integrations (name, enabled) VALUES
- ('Beget PostgreSQL', true), ('ЮKassa', false), ('VK Реклама API', false),
- ('Яндекс Директ API', false), ('Яндекс Метрика', false), ('Telegram Bot API', false)
-ON CONFLICT (name) DO NOTHING;
-
-INSERT INTO settings (key, value) VALUES
- ('unit_economics', '{"budget":150000,"target_sales":60,"reserve_refund_pct":5}'),
- ('agent_limits',   '{"ycgpt_daily_rub":1500,"vk_daily_rub":8000,"direct_daily_rub":6000}');
-```
+- SSL включается через `putenv('PGSSLMODE=require')` **до** создания PDO;
+- в DSN параметр `sslmode` **не пишется** — иначе PDO бросает `unrecognized configuration parameter`.
 
 ---
 
-## 5. Шаг 3. Yandex Cloud
+## 5. Шаг 3. Миграции БД
 
-1. **Каталог (folder).** console.cloud.yandex.ru → создайте каталог, например `neuroprod`. Скопируйте **Folder ID** (`b1g…`) — это переменная `YC_FOLDER_ID`.
-2. **Сервисный аккаунт.** IAM → сервисные аккаунты → создайте `neuroprod-agent`, роль `ai.languageModels.user` (для YandexGPT).
-3. **API-ключ.** У сервисного аккаунта → *API-ключи → создать* → `YANDEX_GPT_API_KEY`. Проверка:
-   ```bash
-   curl -X POST https://llm.api.cloud.yandex.net/foundationModels/v1/completion \
-     -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"modelUri":"gpt://<FOLDER_ID>/yandexgpt/latest","completionOptions":{"temperature":0.3},
-          "messages":[{"role":"user","text":"Скажи: продюсер на связи"}]}'
-   ```
-4. **Lockbox** (рекомендуется для всех секретов): создайте секрет `neuroprod-secrets` с ключами `db_password`, `yookassa_secret`, `vk_ads_token`, `direct_oauth`, `tg_bot_token`. Backend читает их из Lockbox при старте — в `.env` лежит только сервисный ключ доступа.
-5. **YandexART** (арт-директ агент): включите доступ к Kandinsky в том же каталоге, отдельный ключ не нужен — авторизация через IAM сервисного аккаунта.
+```bash
+psql "postgres://flinferd_app:<пароль>@lipikomoufa.beget.app:5432/flinferd_prod?sslmode=require" \
+     -f sql/migrations_v2.sql
+```
+
+Или вставьте содержимое `sql/migrations_v2.sql` в SQL-окно phpPgAdmin. Миграция идемпотентна (`IF NOT EXISTS`). Создаёт/докручивает:
+
+`users` (+ уникальный индекс по `lower(login)`), `login_attempts`, `refresh_tokens`, `launches.config jsonb`, `briefs`, `brief_answers`, `niche_snapshots`, `competitors`, `funnel_stages`, `tariffs`, `app_data`.
 
 ---
 
-## 6. Шаг 4. Токены интеграций
+## 6. Шаг 4. Создание владельца (bcrypt)
 
-Все токены вносятся в кабинете (раздел *Кабинет → Токены и ключи*) и дублируются в `.env` backend.
+Пароль **не пишется в код** — передаётся аргументом одноразового скрипта:
 
-| Сервис | Где получить | Переменная |
-|---|---|---|
-| **VK Реклама** | ads.vk.com → кабинет → *Инструменты → API* → токен с правами на кампании и статистику | `VK_ADS_TOKEN` |
-| **Яндекс Директ** | OAuth: `https://oauth.yandex.ru/authorize?response_type=code&client_id=<APP_ID>` → обменять код на токен; приложение регистрируется на oauth.yandex.ru с правами *Директ: управление кампаниями* | `DIRECT_OAUTH` |
-| **ЮKassa** | Личный кабинет ЮKassa → *Интеграция → ключи API* (сначала тестовые `test_…`, затем боевые `live_…`) | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET` |
-| **Telegram** | @BotFather → `/newbot` → токен | `TELEGRAM_BOT_TOKEN` |
-| **Яндекс Метрика** | OAuth-токен с правом `metrika:read` + номер счётчика | `METRIKA_TOKEN`, `METRIKA_COUNTER` |
-| **SMTP** | Панель Beget → *Почта* → создайте `no-reply@ваш-домен`, в настройках функции включите SMTP | `SMTP_USER`, `SMTP_PASS` |
+```bash
+php scripts/create_owner.php '<пароль владельца>'
+```
 
-**Вебхук ЮKassa** (после публикации backend): в кабинете ЮKassa → *Интеграция → Уведомления* → укажите
-`https://ваш-домен/api/webhooks/yookassa`, отметьте события `payment.succeeded`, `payment.canceled`, `refund.succeeded`.
+Скрипт:
+
+- хэширует пароль: `password_hash($password, PASSWORD_BCRYPT, ['cost' => 12])`;
+- создаёт/обновляет пользователя `flinferd` с `role = 'owner'`;
+- **после выполнения удалите файл с сервера.**
+
+Проверка входа: `flinferd` + пароль → access-токен и кабинет владельца.
 
 ---
 
-## 7. Шаг 5. Backend на Beget Functions
+## 7. Шаг 5. Composer (phpdotenv)
 
-Beget Functions — serverless-функции Node.js в панели хостинга (*Функции*). Минимальный каркас (один файл на роут):
-
-```
-functions/
-├─ auth-login/index.js        # POST /api/auth/login
-├─ auth-refresh/index.js
-├─ launch-list/index.js       # GET  /api/launches (JWT)
-├─ brief-save/index.js        # POST /api/briefs   (JWT)
-├─ webhook-yookassa/index.js  # POST /api/webhooks/yookassa (подпись!)
-├─ cron-orchestrator/index.js # GET  /api/cron/orchestrator (секретный заголовок)
-└─ package.json               # зависимости: pg, bcrypt, jsonwebtoken
+```bash
+cd public_html/api
+composer install
 ```
 
-**Пример `auth-login/index.js`:**
-
-```js
-const { Pool } = require("pg");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // postgres://...?sslmode=require
-  ssl: { rejectUnauthorized: true },
-});
-
-exports.handler = async (req) => {
-  const { login, password } = JSON.parse(req.body || "{}");
-  const ip = req.headers["x-forwarded-for"] || "0.0.0.0";
-
-  // rate-limit: 5 неудач за 15 минут
-  const blocked = await pool.query(
-    `SELECT count(*) c FROM login_attempts
-     WHERE login=$1 AND success=false AND created_at > now() - interval '15 minutes'`, [login]);
-  if (Number(blocked.rows[0].c) >= 5)
-    return { statusCode: 429, body: JSON.stringify({ error: "Слишком много попыток" }) };
-
-  const r = await pool.query(`SELECT id, password_hash FROM users WHERE login=$1`, [login]);
-  const ok = r.rows.length === 1 && (await bcrypt.compare(password, r.rows[0].password_hash));
-  await pool.query(`INSERT INTO login_attempts (login, ip, success) VALUES ($1,$2,$3)`, [login, ip, ok]);
-  if (!ok) return { statusCode: 401, body: JSON.stringify({ error: "Неверный логин или пароль" }) };
-
-  const access = jwt.sign({ sub: r.rows[0].id, role: "owner" }, process.env.JWT_SECRET, { expiresIn: "15m" });
-  const refresh = jwt.sign({ sub: r.rows[0].id, typ: "refresh" }, process.env.JWT_SECRET, { expiresIn: "30d" });
-  return { statusCode: 200, headers: { "Set-Cookie": `refresh=${refresh}; HttpOnly; Secure; SameSite=Strict; Path=/` }, body: JSON.stringify({ access }) };
-};
-```
-
-**`.env` функции** (панель Beget → Функция → Переменные окружения):
-
-```
-DATABASE_URL=postgres://flinferd_app:ПАРОЛЬ@ХОСТ:5432/flinferd_prod?sslmode=require
-JWT_SECRET=<64 случайных символа>
-YC_FOLDER_ID=b1g…
-YANDEX_GPT_API_KEY=AQVN…
-VK_ADS_TOKEN=vkad…
-DIRECT_OAUTH=ydir…
-YOOKASSA_SHOP_ID=482913
-YOOKASSA_SECRET=live_…
-TELEGRAM_BOT_TOKEN=…
-SMTP_USER=no-reply@ваш-домен
-SMTP_PASS=…
-```
-
-**Вебхук ЮKassa** обязан проверять подпись (HTTP Basic Auth с `shopId:secret` из уведомления) и идемпотентно обновлять `payments.status` по `yookassa_id`.
+Если composer на хостинге недоступен — **ничего ставить не нужно**: `config.php` содержит фолбэк-парсер `.env` с тем же поведением (без интерполяции).
 
 ---
 
-## 8. Шаг 6. Сборка и публикация фронтенда
+## 8. Шаг 6. Yandex Cloud: YandexGPT
+
+1. Console → каталог: запишите **Folder ID** (`b1g…`).
+2. Сервисные аккаунты → создать → роль **`ai.languageModels.user`**.
+3. У аккаунта → «API-ключ» → создать ключ → запишите (`AQVN…`).
+4. Заполните `YC_FOLDER_ID` и `YANDEX_GPT_API_KEY` в `.env`.
+
+Проверка связи:
+
+```bash
+curl -X POST https://llm.api.cloud.yandex.net/foundationModels/v1/completion \
+  -H "Authorization: Api-Key $YANDEX_GPT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "modelUri": "gpt://'$YC_FOLDER_ID'/yandexgpt/latest",
+    "completionOptions": {"stream": false, "temperature": 0.3, "maxTokens": "128"},
+    "messages": [{"role": "user", "text": "Скажи: связь есть"}]
+  }'
+```
+
+Где используется: при `POST /api/launches/{id}/brief` сервер собирает промпт из ответов распаковки (`buildBriefPrompt()`), вызывает `callYandexGPT()` и сохраняет summary в `briefs.summary`. Если YandexGPT не настроен или упал — бриф всё равно сохраняется, в ответе поле `yc: "skipped"` / `"error: ..."`.
+
+---
+
+## 9. Шаг 7. Сборка и деплой фронтенда
 
 ```bash
 npm install
-npm run build        # результат в dist/
+npm run build
 ```
 
-1. Панель Beget → *Менеджер файлов* → откройте каталог сайта `ваш-домен/public_html`.
-2. Загрузите **содержимое** `dist/` (index.html + assets/) в `public_html`.
-3. SPA-роутинг: создайте `public_html/.htaccess`:
-   ```apache
-   RewriteEngine On
-   RewriteBase /
-   RewriteRule ^index\.html$ - [L]
-   RewriteCond %{REQUEST_FILENAME} !-f
-   RewriteCond %{REQUEST_FILENAME} !-d
-   RewriteRule . /index.html [L]
-   ```
-4. Укажите API: создайте `.env.production` **до сборки**:
-   ```
-   VITE_API_URL=https://ваш-домен/api
-   ```
-5. Проверьте HTTPS (замок в браузере) и что `https://ваш-домен` открывает обзор запуска.
+На сервер:
 
-> Обновление сервиса: локально `npm run build` → заменить файлы в `public_html`. База и функции при этом не затрагиваются.
-
----
-
-## 9. Шаг 7. Сервисные задачи
-
-**Cron** (панель Beget → *Cron* либо функция-планировщик):
-
-```cron
-*/15 * * * *  curl -fsS -H "X-Cron-Secret: $CRON_SECRET" https://ваш-домен/api/cron/orchestrator   # цикл оркестратора
-0 3 * * *     curl -fsS -H "X-Cron-Secret: $CRON_SECRET" https://ваш-домен/api/cron/night-audit    # сверка реестра ЮKassa
-30 3 * * *    pg_dump "$DATABASE_URL" | gzip > /home/USER/backups/db-$(date +\%F).sql.gz           # nightly-бэкап
+```
+dist/index.html  → public_html/index.html
+dist/assets/     → public_html/assets/   (заменить целиком)
 ```
 
-**Бэкапы:** в панели Beget включите автоматические снапшоты (для VDS) + nightly `pg_dump` выше + раз в неделю копируйте архив во внешнее облако (Object Storage).
+Корневой `.htaccess` уже в репозитории (`public_html/.htaccess`): он исключает `/api/*` из SPA-перезаписи и закрывает доступ к `.env`. Если у вас свой рабочий `.htaccess` — добавьте только строку перед SPA-правилом:
 
-**SMTP:** создайте почту домена, в функции рассылок укажите SMTP Beget (`smtp.ваш-домен:465, SSL`).
+```apache
+RewriteCond %{REQUEST_URI} !^/api/
+```
 
-**Мониторинг:** функция `/api/cron/night-audit` при аномалиях (ROMI < 100%, ошибки вебхуков, падение агентов) шлёт алерт владельцу через Telegram-бота.
-
----
-
-## 10. Безопасность
-
-- [ ] Пароль владельца — **только bcrypt-хэш** в `users`; из фронтенда строки `OWNER_LOGIN`/`OWNER_PASS` удалены.
-- [ ] JWT: access 15 мин, refresh в httpOnly-cookie, ротация refresh-токенов.
-- [ ] Rate-limit на `/api/auth/login` (5 попыток / 15 мин), логирование в `login_attempts`.
-- [ ] `DATABASE_URL` и ключи — **только в переменных окружения функций**, никогда не в git и не в бандле фронтенда.
-- [ ] Токены интеграций в БД шифруются: `pgp_sym_encrypt(value, current_setting('app.secret_key'))`, ключ — из окружения.
-- [ ] Доступ к PostgreSQL — только по SSL и IP-вайтлисту (VDS с функциями).
-- [ ] **152-ФЗ:** чекбоксы согласий на всех лендингах, политика обработки ПДн, хранение ПДн в РФ (Beget — дата-центры в Москве/СПб), регистрация оператора ПДн в Роскомнадзоре.
-- [ ] **54-ФЗ:** облачная касса через ЮKassa, чек на каждую оплату/возврат, поле `payments.receipt_sent`.
-- [ ] Оферта: что считается оказанной услугой, условия возврата (резерв 5% в `settings.unit_economics`).
-- [ ] Ежеквартальная ротация токенов (`tokens.rotated_at`).
+URL API зашит в `src/api.ts`: `https://producer-ai.ru/api` (константа `API_BASE`).
 
 ---
 
-## 11. Кабинет
+## 10. API-справочник
 
-Вход: *Кабинет* в меню (значок замка) → логин `Flinferd`, пароль владельца. Внутри:
+| Эндпоинт | Метод | Назначение | Авторизация |
+|----------|-------|------------|-------------|
+| `/api/auth.php` | POST | Вход: bcrypt + rate-limit, выдача JWT-пары | нет |
+| `/api/auth/refresh` | POST | Новый access по refresh-cookie (ротация) | cookie |
+| `/api/auth/logout` | POST | Отзыв refresh-токена | cookie |
+| `/api/launches` | GET | Список запусков | JWT |
+| `/api/launches` | POST | Создать запуск `{ name, expert? }` | JWT, **owner** |
+| `/api/launches/{id}` | GET | Запуск + бриф + ниша + план | JWT |
+| `/api/launches/{id}/brief` | GET/POST | Бриф распаковки; POST вызывает YandexGPT | JWT |
+| `/api/launches/{id}/niche` | GET/POST | Срез ниши + конкуренты | JWT |
+| `/api/launches/{id}/plan` | GET/POST | Воронка + тарифы + meta (трафик/цена) | JWT |
+| `/api/data` | GET | Данные кабинета (app_data: воронка, каналы, интеграции…) | JWT |
+| `/api/data` | PUT | Апсерт ключей данных (белый список) | JWT, **owner** |
 
-| Блок | Что делает |
-|---|---|
-| **Базы данных** | Подключение PostgreSQL Beget (хост/порт/база/пользователь/SSL), пинг, отключение |
-| **Токены и ключи** | Добавление/отзыв токенов Yandex Cloud, VK Ads, Директа, ЮKassa, Telegram |
-| **Интеграции** | Включение/выключение сервисов (ЮKassa, VK, Директ, Метрика, Telegram, PostgreSQL) |
-| **Production-чеклист** | SSL, миграции, вебхук ЮKassa, cron, SMTP, бэкапы, согласия 152-ФЗ, мониторинг |
-| **.env backend** | Список переменных окружения с копированием |
-| **Запуски** | Все проекты, прогресс, ROMI, шаблоны от запуска к запуску |
+Примеры:
 
-Настройки кабинета в прототипе сохраняются в localStorage браузера; в production читаются из `settings`, `integrations`, `tokens`.
+```bash
+# вход
+curl -X POST https://producer-ai.ru/api/auth.php \
+  -H "Content-Type: application/json" \
+  -d '{"login":"flinferd","password":"<пароль>"}' -c cookies.txt
+# → { success: true, data: { access_token, token_type, expires_in, user: { id, login, role, name } } }
+
+# список запусков
+curl https://producer-ai.ru/api/launches -H "Authorization: Bearer $TOKEN"
+
+# создать запуск (owner)
+curl -X POST https://producer-ai.ru/api/launches \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Нейрофотограф 2.0","expert":"Мария Ким"}'
+
+# сохранить бриф (summary сгенерирует YandexGPT)
+curl -X POST https://producer-ai.ru/api/launches/1/brief \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"answers":[{"key":"exp","label":"Опыт","value":"6 лет съёмок"},{"key":"aud","label":"Аудитория","value":"селлеры маркетплейсов"}]}'
+
+# данные кабинета
+curl https://producer-ai.ru/api/data -H "Authorization: Bearer $TOKEN"
+curl -X PUT https://producer-ai.ru/api/data -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"budget":180000}'
+```
 
 ---
 
-## 12. Troubleshooting
+## 11. Как фронтенд работает с данными
+
+- **localStorage хранит только** access-токен (`np_access_token`) и сессионный объект пользователя (`np_session_user`). Бизнес-данных в браузере нет.
+- Вход: `LoginForm` → `POST /api/auth.php` → токен + `GET /api/data` → состояние `real` в `store.tsx`.
+- Каждый запрос идёт с `Authorization: Bearer …`; при `401` клиент **один раз** вызывает `/api/auth/refresh` (refresh живёт в httpOnly-cookie, JS его не видит) и повторяет запрос.
+- Изменения (`store.set(...)`) сразу видны в UI и асинхронно уходят `PUT /api/data` (владелец).
+- Разделы «Обзор», «Воронка», «Реклама», «Оплаты», «Статистика» для гостя показывают заглушку «войдите» — демо-данных в проекте больше нет.
+- Запуски в кабинете — `GET /api/launches`; создание — `POST /api/launches` (владелец).
+
+---
+
+## 12. Сервисные задачи
+
+- **Cron** (панель Beget → Cron): цикл оркестратора `*/15 * * * *`, ночная сверка реестра `0 3 * * *`, чистка `login_attempts` и отозванных `refresh_tokens` `0 4 * * *`.
+- **SMTP:** почта домена для писем ученикам (доступы, напоминания).
+- **Бэкапы:** ежедневные снапшоты PostgreSQL в панели Beget + внешняя копия.
+- **Мониторинг:** алерты о `5xx` на `/api/*` владельцу в Telegram.
+
+---
+
+## 13. Troubleshooting
 
 | Симптом | Причина / решение |
-|---|---|
-| `ECONNREFUSED 5432` | Внешний доступ к PostgreSQL не включён в панели Beget, либо IP функции не в вайтлисте |
-| `no pg_hba.conf entry … SSL` | Подключение без SSL — добавьте `?sslmode=require` в `DATABASE_URL` |
-| Пустая страница после деплоя | Файлы загружены не в `public_html`, или не хватает `.htaccess` для SPA |
-| `401 Api-Key` от YandexGPT | Ключ создан не в том каталоге / у аккаунта нет роли `ai.languageModels.user` |
-| ЮKassa шлёт уведомления, статусы не меняются | Проверьте подпись вебхука и идемпотентность по `yookassa_id` |
-| VK Ads `insufficient permissions` | Токен выдан без прав на управление кампаниями — перевыпустите |
-| CORS-ошибки в браузере | В настройках домена функции разрешите origin вашего сайта |
-| Лимит генераций YandexGPT | Поднимите `agent_limits.ycgpt_daily_rub` в `settings` или включите кэш типовых генераций |
+|---------|-------------------|
+| `SQLSTATE[0A000]: unrecognized configuration parameter "sslmode"` | `sslmode` попал в DSN. Уберите его из DSN — SSL задаётся `putenv('PGSSLMODE=require')` до PDO (в `config.php` уже так). |
+| `could not find driver` | Не включён `pdo_pgsql`: панель Beget → PHP → расширения. |
+| `401 Токен недействителен или истёк` | Access протух; фронтенд сам делает refresh. Если повторяется — проверьте `JWT_SECRET` (одинаковый на всех процессах) и время сервера. |
+| `429 Слишком много неудачных попыток` | Сработал rate-limit. Подождите 15 минут или очистите `login_attempts` для теста. |
+| Вход не проходит сразу после миграций | Владелец не создан: выполните `php scripts/create_owner.php '<пароль>'`. |
+| `404` на `/api/launches` (возвращается HTML) | SPA-правило перехватывает `/api`. Добавьте `RewriteCond %{REQUEST_URI} !^/api/` в корневой `.htaccess` (раздел 9). |
+| CORS-ошибка в консоли | Домен не совпадает с `ALLOWED_ORIGIN` в `.env` (протокол и www важны). |
+| YandexGPT: `401/403` | API-ключ без роли `ai.languageModels.user` или чужой Folder ID в `modelUri`. |
+| `.env` виден по прямой ссылке | Проверьте блок `<FilesMatch "^\.env">` в корневом `.htaccess`. |
+| Изменения не сохраняются | `PUT /api/data` доступен только owner; проверьте роль в JWT (`role: owner`). |
 
 ---
 
-## 13. Дорожная карта
+## 14. Дорожная карта
 
-- **MVP (6–8 нед):** распаковка + бриф, анализ ниши, продукт и тарифы, ЮKassa + чеки, базовая статистика и кабинет.
-- **v1.0 (+8 нед):** ИИ-медиабаер (VK Ads + Директ), конструктор воронок с авторасчётом, скрипт продаж в Telegram, approval-контур.
-- **v2.0 (+12 нед):** шаблоны запусков, максимайзер и когортный LTV, ведение курса (бот-куратор), мультизапуски.
-
----
-
-© ПРОДЮСЕР.AI · YandexGPT на Yandex Cloud · PostgreSQL на Beget
+- **v0.9 (сейчас):** JWT/bcrypt-аутентификация, запуски, бриф с YandexGPT-суммаризацией, ниша, план, данные кабинета из PostgreSQL.
+- **v1.0:** вебхуки ЮKassa → `app_data.txs` и `payments`; расчёт KPI финконтролем в `app_data.kpis`; медиабаер через VK Ads API / Директ API.
+- **v1.5:** агент распаковки ведёт диалог через backend (YandexGPT streaming), события в `events` для сквозной аналитики.
+- **v2.0:** ведение курса (уроки, прогресс, ИИ-куратор), максимайзер, когортный LTV.

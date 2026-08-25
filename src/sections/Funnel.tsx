@@ -1,28 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { FUNNEL_OPTIMIZED, FUNNEL_STAGES, FUNNEL_TIPS, type Tone } from "../data";
+import { FUNNEL_OPTIMIZED, FUNNEL_TIPS, type FunnelStage, type Tone } from "../data";
 import { useAuth, useStore } from "../store";
-import { Chip, Head, Icon, Panel, Range, Reveal, ToneBtn, useReducedMotion, fmt } from "../ui";
+import { Chip, Head, Icon, LockedNote, Panel, Range, Reveal, ToneBtn, useReducedMotion, fmt } from "../ui";
+
+/** Пустая структура воронки — до загрузки этапов из БД. */
+const EMPTY_STAGES: FunnelStage[] = [
+  { id: "reg", label: "Клик → регистрация", value: 0, bench: 0 },
+  { id: "show", label: "Регистрация → пришли", value: 0, bench: 0 },
+  { id: "stay", label: "Пришли → досмотрели оффер", value: 0, bench: 0 },
+  { id: "buy", label: "Оффер → покупка", value: 0, bench: 0 },
+  { id: "trip", label: "Не купили → трипваер", value: 0, bench: 0 },
+];
 
 export default function Funnel({ push }: { push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
   const { live } = useAuth();
   const { real, set } = useStore();
-  const [stages, setStages] = useState(FUNNEL_STAGES);
-  const [traffic, setTraffic] = useState(12000);
-  const [price, setPrice] = useState(24900);
+  const [stages, setStages] = useState<FunnelStage[]>(real.funnel.length ? real.funnel : EMPTY_STAGES);
+  const [traffic, setTraffic] = useState(real.traffic);
+  const [price, setPrice] = useState(real.price);
   const animRef = useRef(0);
+  const synced = useRef(false);
 
-  // в live-режиме синхронизируемся с реальными данными из хранилища
+  // когда данные из БД доехали (GET /api/data) — подставляем их один раз
   useEffect(() => {
-    if (live) {
+    if (!synced.current && real.funnel.length > 0) {
+      synced.current = true;
       setStages(real.funnel);
       setTraffic(real.traffic);
       setPrice(real.price);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live]);
+  }, [real.funnel, real.traffic, real.price]);
 
-  const persist = (patch: { stages?: typeof FUNNEL_STAGES; traffic?: number; price?: number }) => {
+  /** изменения уходят в состояние и в БД (PUT /api/data, только для вошедших) */
+  const persist = (patch: { stages?: FunnelStage[]; traffic?: number; price?: number }) => {
     if (!live) return;
     set({
       ...(patch.stages ? { funnel: patch.stages } : {}),
@@ -30,6 +41,10 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
       ...(patch.price !== undefined ? { price: patch.price } : {}),
     });
   };
+
+  if (!live) {
+    return <LockedNote title="Симулятор воронки" text="Этапы и бенчмарки загружаются из таблицы funnel-настроек в PostgreSQL. Войдите, чтобы крутить конверсии и видеть пересчёт юнит-экономики." />;
+  }
 
   const reg = stages[0].value;
   const show = stages[1].value;

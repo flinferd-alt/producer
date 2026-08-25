@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ENV_VARS, PROD_CHECKLIST, TOKEN_PROVIDERS, type Tone } from "../data";
 import { useAuth, useStore } from "../store";
 import { Chip, Dot, Head, Icon, Panel, Reveal, ToneBtn, useReducedMotion } from "../ui";
@@ -21,6 +21,15 @@ export default function Master({ push }: { push: (t: string, tone?: Tone) => voi
 
   /* ---- чеклист ---- */
   const [checks, setChecks] = useState<Record<string, boolean>>(() => Object.fromEntries(real.checklist.map((c) => [c.id, c.done])));
+
+  // если данные из БД доехали позже монтирования (восстановленная сессия) — подтягиваем один раз
+  const checksSynced = useRef(real.checklist.length > 0);
+  useEffect(() => {
+    if (!checksSynced.current && real.checklist.length > 0) {
+      checksSynced.current = true;
+      setChecks(Object.fromEntries(real.checklist.map((c) => [c.id, !!c.done])));
+    }
+  }, [real.checklist]);
 
   if (!isOwner) {
     return (
@@ -109,7 +118,8 @@ export default function Master({ push }: { push: (t: string, tone?: Tone) => voi
   const toggleCheck = (id: string) => {
     const next = { ...checks, [id]: !checks[id] };
     setChecks(next);
-    set({ checklist: PROD_CHECKLIST.map((p) => ({ id: p.id, done: !!next[p.id] })) });
+    // сохраняем полные элементы (title/desc нужны серверу и другим экранам)
+    set({ checklist: PROD_CHECKLIST.map((p) => ({ ...p, done: !!next[p.id] })) });
   };
 
   const envText = ENV_VARS.map((e) => `${e.k}=${e.v}`).join("\n");

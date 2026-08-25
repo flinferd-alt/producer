@@ -1,37 +1,41 @@
 import { useEffect, useRef, useState } from "react";
-import { AD_CHANNELS, CAMPAIGNS, TARIFFS, TXS, type Tone } from "../data";
+import { CAMPAIGNS, TARIFFS, type AdChannel, type Tone } from "../data";
 import { useAuth, useStore } from "../store";
-import { Bar, Chip, Dot, Head, Icon, Num, Panel, Range, Reveal, Spark, ToneBtn, useReducedMotion, fmt } from "../ui";
-
-const DEMO_BUDGET = 150000;
+import { Bar, Chip, Dot, Head, Icon, LockedNote, Num, Panel, Range, Reveal, Spark, ToneBtn, useReducedMotion, fmt } from "../ui";
 
 /* ================= РЕКЛАМА ================= */
 export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
   const { live } = useAuth();
   const { real, set } = useStore();
-  const [channels, setChannels] = useState(AD_CHANNELS);
-  const [budget, setBudget] = useState(DEMO_BUDGET);
-  const [statuses, setStatuses] = useState<Record<string, boolean>>(() => Object.fromEntries(AD_CHANNELS.map((c) => [c.id, c.active])));
+  const [channels, setChannels] = useState<AdChannel[]>(real.ads);
+  const [budget, setBudget] = useState<number>(real.budget);
+  const [statuses, setStatuses] = useState<Record<string, boolean>>(() => Object.fromEntries(real.ads.map((c) => [c.id, c.active])));
   const [campStatus, setCampStatus] = useState<Record<string, string>>(() => Object.fromEntries(CAMPAIGNS.map((c) => [c.id, c.status])));
   const animRef = useRef(0);
+  const synced = useRef(false);
 
-  // live-режим: реальные каналы и бюджет из хранилища
+  // когда каналы и бюджет доехали из БД (GET /api/data) — подставляем один раз
   useEffect(() => {
-    if (live) {
+    if (!synced.current && (real.ads.length > 0 || real.budget > 0)) {
+      synced.current = true;
       setChannels(real.ads);
       setBudget(real.budget);
       setStatuses(Object.fromEntries(real.ads.map((c) => [c.id, c.active])));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live]);
+  }, [real.ads, real.budget]);
 
-  const persistAds = (next: typeof AD_CHANNELS) => {
+  /** изменения уходят в состояние и в БД (PUT /api/data) */
+  const persistAds = (next: AdChannel[]) => {
     if (live) set({ ads: next });
   };
 
   const totalSpend = channels.reduce((s, c) => s + (budget * c.share) / 100, 0);
   const totalLeads = channels.reduce((s, c) => s + c.leads, 0);
+
+  if (!live) {
+    return <LockedNote title="Реклама и медиамикс" text="Каналы, доли бюджета и CPL загружаются из PostgreSQL. Медиабаер-агент управляет ставками через VK Ads API и Директ API — войдите, чтобы увидеть реальные кампании." />;
+  }
 
   const setShare = (id: string, v: number) => {
     setChannels((cs) => {
@@ -178,16 +182,27 @@ export function AdsSection({ push }: { push: (t: string, tone?: Tone) => void })
 export function PaymentsSection({ push }: { push: (t: string, tone?: Tone) => void }) {
   const { live } = useAuth();
   const { real } = useStore();
-  const txs = live ? real.txs : TXS;
+  const txs = real.txs; // только из БД (app_data.txs ← вебхуки ЮKassa)
+
+  const accepted = txs.filter((t) => t.status === "успешно");
+  const sumAccepted = accepted.reduce((s, t) => s + t.amount, 0);
+  const avgCheck = accepted.length ? Math.round(sumAccepted / accepted.length) : 0;
+  const refunded = txs.filter((t) => t.status === "возврат").length;
+  const refundRate = txs.length ? ((refunded / txs.length) * 100).toFixed(1).replace(".", ",") : "0,0";
+
+  if (!live) {
+    return <LockedNote title="Оплаты и реестр ЮKassa" text="Платежи попадают в PostgreSQL через вебхуки ЮKassa, чеки 54-ФЗ формирует облачная касса. Войдите, чтобы видеть реальный реестр." />;
+  }
+
   return (
     <div className="space-y-5">
       <Reveal>
         <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
           {[
-            { l: "Принято платежей", v: "1 245 000", s: " ₽", tone: "text-amber", sub: "через ЮKassa" },
-            { l: "Средний чек", v: "24 900", s: " ₽", tone: "text-ink", sub: "+рассрочки 31%" },
-            { l: "Возвраты", v: "2,1", s: "%", tone: "text-coral", sub: "резерв 5% заложен" },
-            { l: "Ближайшая выплата", v: "пт, 14:00", s: "", tone: "text-mint", sub: "486 300 ₽ на р/с" },
+            { l: "Принято платежей", v: fmt(sumAccepted), s: " ₽", tone: "text-amber", sub: "через ЮKassa" },
+            { l: "Средний чек", v: fmt(avgCheck), s: " ₽", tone: "text-ink", sub: `${accepted.length} успешных` },
+            { l: "Возвраты", v: refundRate, s: "%", tone: "text-coral", sub: "резерв 5% заложен" },
+            { l: "Платежей в реестре", v: String(txs.length), s: "", tone: "text-mint", sub: "webhook → fincontrol" },
           ].map((k) => (
             <Panel key={k.l} hover className="p-4">
               <div className="font-mono text-[10px] tracking-[0.14em] text-dim uppercase">{k.l}</div>
@@ -222,6 +237,14 @@ export function PaymentsSection({ push }: { push: (t: string, tone?: Tone) => vo
                   </tr>
                 </thead>
                 <tbody>
+                  {txs.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-10 text-center">
+                        <div className="font-mono text-[11px] tracking-wide text-dim uppercase">Платежей пока нет</div>
+                        <div className="mt-1 text-[12px] text-dim">Реестр заполнится автоматически из вебхуков ЮKassa.</div>
+                      </td>
+                    </tr>
+                  )}
                   {txs.map((t) => (
                     <tr key={t.id} className="border-b border-line/60 transition-colors last:border-0 hover:bg-panel2/40">
                       <td className="px-5 py-3">

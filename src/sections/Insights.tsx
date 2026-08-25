@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { AGENTS, COHORTS, REVENUE_SERIES, ROMI_BY_CHANNEL, type Tone } from "../data";
-import { Bar, Chip, Dot, Head, Icon, Panel, Reveal, ToneBtn, TONE_TEXT, fmt } from "../ui";
+import { useAuth } from "../store";
+import { Bar, Chip, Dot, Head, Icon, LockedNote, Panel, Reveal, ToneBtn, TONE_TEXT, fmt } from "../ui";
 
 /* ================= СТАТИСТИКА ================= */
 export function StatsSection() {
+  const { live } = useAuth();
   const periods = Object.keys(REVENUE_SERIES);
   const [period, setPeriod] = useState(periods[1]);
   const { rev, spend } = REVENUE_SERIES[period];
@@ -22,6 +24,15 @@ export function StatsSection() {
 
   const totalRev = rev.reduce((s, v) => s + v, 0);
   const totalSpend = spend.reduce((s, v) => s + v, 0);
+
+  if (!live) {
+    return (
+      <LockedNote
+        title="Статистика запуска"
+        text="Выручка, когорты и ROMI по каналам рассчитываются по событиям в PostgreSQL. Войдите, чтобы видеть цифры реального запуска."
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">

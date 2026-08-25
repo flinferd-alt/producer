@@ -1,59 +1,53 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  AD_CHANNELS, DEFAULT_DB_CONNS, DEFAULT_TOKENS, FUNNEL_STAGES, INTEGRATIONS, KPIS, PROD_CHECKLIST, TXS,
-  type AdChannel, type ApiToken, type DbConn, type FunnelStage, type Kpi, type Tx,
-} from "./data";
+/**
+ * store.tsx — глобальное состояние: сессия (JWT) + реальные данные из БД.
+ *
+ * Никаких паролей и демо-данных в коде:
+ *  - вход — POST /api/auth.php (password_verify + bcrypt на сервере);
+ *  - данные — GET /api/data, изменения — PUT /api/data (PostgreSQL, app_data);
+ *  - localStorage хранит ТОЛЬКО access-токен и сессионный объект пользователя.
+ */
 
-/* ---------------- доступ ---------------- */
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AdChannel, ApiToken, DbConn, FunnelStage, Kpi, Tx } from "./data";
+import { api, ApiError, clearAuth, getStoredUser, getToken, type StoredUser } from "./api";
+
+/* ---------------- сессия ---------------- */
+
 export type Role = "guest" | "user" | "owner";
-
-// сессия, восстановленная после перезагрузки по сохранённому серверному токену pa_token
-export function restoreApiSession(): void {
-  try {
-    const token = localStorage.getItem("pa_token");
-    if (!token) return; // нет токена — остаёмся в текущей сессии
-    const existing = readJson<Session>(LS_AUTH, { role: "guest", login: "", name: "" });
-    if (existing.role !== "guest") return; // сессия уже есть
-    const rawUser = localStorage.getItem("pa_user");
-    const u = rawUser ? (JSON.parse(rawUser) as { login?: string; role?: string }) : null;
-    const role: Role = u?.role === "owner" ? "owner" : u?.role === "user" ? "user" : "owner";
-    const s: Session =
-      role === "owner"
-        ? { role, login: u?.login || OWNER_DISPLAY, name: "Flinferd · владелец" }
-        : { role, login: u?.login || "", name: "Алексей Морозов · эксперт" };
-    localStorage.setItem(LS_AUTH, JSON.stringify(s));
-  } catch {
-    /* повреждённые данные — игнорируем */
-  }
-}
-
-// ЛОГИН ВЛАДЕЛЬЦА ВСЕГДА С МАЛЕНЬКОЙ БУКВЫ: flinferd
-// (проверка нечувствительна к регистру, для отображения используется OWNER_DISPLAY)
-export const OWNER_LOGIN = "flinferd";
-export const OWNER_PASS = "$Flin914101$";
-export const OWNER_DISPLAY = "Flinferd";
-export const USER_LOGIN = "expert";
-export const USER_PASS = "neuro2026";
 
 export interface Session {
   role: Role;
   login: string;
   name: string;
+  id?: number;
 }
+
+const GUEST: Session = { role: "guest", login: "", name: "" };
 
 interface AuthValue {
   session: Session;
-  live: boolean; // true = реальные данные (вошли в аккаунт)
+  live: boolean;   // true — пользователь вошёл (реальные данные)
   isOwner: boolean;
-  loginAs: (login: string, pass: string) => { ok: boolean; role?: Role };
-  /** вход по ответу сервера (PHP API уже проверил пароль и выдал токен) */
-  applyApiUser: (login: string, role: Role) => void;
+  login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
   logout: () => void;
 }
 
-const AuthCtx = createContext<AuthValue | null>(null);
-
 /* ---------------- реальные данные ---------------- */
+
+export interface IntegrationItem {
+  name: string;
+  desc: string;
+  on: boolean;
+  tone: "amber" | "mint" | "coral" | "sky" | "mut";
+}
+
+export interface ChecklistItem {
+  id: string;
+  title: string;
+  desc: string;
+  done: boolean;
+}
+
 export interface RealData {
   funnel: FunnelStage[];
   traffic: number;
@@ -62,106 +56,114 @@ export interface RealData {
   ads: AdChannel[];
   txs: Tx[];
   kpis: Kpi[];
-  integrations: typeof INTEGRATIONS;
+  integrations: IntegrationItem[];
   dbConns: DbConn[];
   tokens: ApiToken[];
-  checklist: { id: string; done: boolean }[];
+  checklist: ChecklistItem[];
 }
 
-const seedReal = (): RealData => ({
-  funnel: FUNNEL_STAGES,
-  traffic: 12000,
-  price: 24900,
-  budget: 150000,
-  ads: AD_CHANNELS,
-  txs: TXS,
-  kpis: KPIS,
-  integrations: INTEGRATIONS,
-  dbConns: DEFAULT_DB_CONNS,
-  tokens: DEFAULT_TOKENS,
-  checklist: PROD_CHECKLIST.map((p) => ({ id: p.id, done: p.done })),
-});
+/** Пустое состояние: до входа и до загрузки из БД бизнес-данных нет. */
+const EMPTY_REAL: RealData = {
+  funnel: [],
+  traffic: 0,
+  price: 0,
+  budget: 0,
+  ads: [],
+  txs: [],
+  kpis: [],
+  integrations: [],
+  dbConns: [],
+  tokens: [],
+  checklist: [],
+};
 
 interface StoreValue {
   real: RealData;
+  loaded: boolean; // true после успешного GET /api/data
+  /** Обновляет состояние и синхронизирует ключи с БД (PUT /api/data). */
   set: (patch: Partial<RealData>) => void;
+  refreshData: () => Promise<void>;
 }
 
+const AuthCtx = createContext<AuthValue | null>(null);
 const StoreCtx = createContext<StoreValue | null>(null);
 
-const LS_AUTH = "np_auth_v1";
-const LS_DATA = "np_real_data_v1";
-
-function readJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
+/* ---------------- провайдер ---------------- */
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>(() =>
-    readJson<Session>(LS_AUTH, { role: "guest", login: "", name: "" }),
-  );
-  const [real, setReal] = useState<RealData>(() => {
-    const seeded = seedReal();
-    const saved = readJson<Partial<RealData>>(LS_DATA, {});
-    return { ...seeded, ...saved };
+  const [session, setSession] = useState<Session>(() => {
+    // сессия восстанавливается из сохранённого серверного входа (токен + user)
+    const token = getToken();
+    const user = getStoredUser();
+    if (!token || !user) return GUEST;
+    return {
+      role: user.role === "owner" ? "owner" : "user",
+      login: user.login,
+      name: user.name,
+      id: user.id,
+    };
   });
 
+  const [real, setReal] = useState<RealData>(EMPTY_REAL);
+  const [loaded, setLoaded] = useState(false);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  /** Загрузка реальных данных из PostgreSQL через GET /api/data. */
+  const refreshData = useCallback(async () => {
+    try {
+      const data = (await api.getData()) as Partial<RealData>;
+      setReal({ ...EMPTY_REAL, ...data });
+      setLoaded(true);
+    } catch (e) {
+      // токен протух и refresh не помог — разлогиниваемся
+      if (e instanceof ApiError && e.status === 401) {
+        clearAuth();
+        setSession(GUEST);
+        setReal(EMPTY_REAL);
+      }
+      setLoaded(true);
+      console.warn("Не удалось загрузить данные из БД:", e);
+    }
+  }, []);
+
+  // при старте: если есть токен — подгружаем данные
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_DATA, JSON.stringify(real));
-    } catch {
-      /* приватный режим — игнорируем */
-    }
-  }, [real]);
+    if (getToken()) void refreshData();
+  }, [refreshData]);
 
-  const loginAs = useCallback((login: string, pass: string) => {
-    const l = login.trim();
-    // регистр логина не важен: flinferd === Flinferd === FLINFERD
-    if (l.toLowerCase() === OWNER_LOGIN.toLowerCase() && pass === OWNER_PASS) {
-      const s: Session = { role: "owner", login: OWNER_DISPLAY, name: "Flinferd · владелец" };
-      setSession(s);
-      localStorage.setItem(LS_AUTH, JSON.stringify(s));
-      return { ok: true, role: "owner" as Role };
-    }
-    if (l.toLowerCase() === USER_LOGIN.toLowerCase() && pass === USER_PASS) {
-      const s: Session = { role: "user", login: l, name: "Алексей Морозов · эксперт" };
-      setSession(s);
-      localStorage.setItem(LS_AUTH, JSON.stringify(s));
-      return { ok: true, role: "user" as Role };
-    }
-    return { ok: false };
-  }, []);
+  /** Вход через сервер: bcrypt + JWT. Пароль никуда, кроме API, не попадает. */
+  const login = useCallback(
+    async (loginStr: string, password: string) => {
+      const { user } = await api.login(loginStr, password);
+      const role: Role = user.role === "owner" ? "owner" : "user";
+      setSession({ role, login: user.login, name: user.name, id: user.id });
+      await refreshData();
+      return { ok: true as const, role };
+    },
+    [refreshData],
+  );
 
-  const applyApiUser = useCallback((login: string, role: Role) => {
-    const s: Session =
-      role === "owner"
-        ? { role: "owner", login: login || OWNER_DISPLAY, name: "Flinferd · владелец" }
-        : { role: "user", login, name: "Алексей Морозов · эксперт" };
-    setSession(s);
-    try {
-      localStorage.setItem(LS_AUTH, JSON.stringify(s));
-    } catch {
-      /* приватный режим */
-    }
-  }, []);
-
+  /** Выход: отзыв refresh-токена на сервере + очистка локального хранилища. */
   const logout = useCallback(() => {
-    const s: Session = { role: "guest", login: "", name: "" };
-    setSession(s);
-    localStorage.removeItem(LS_AUTH);
-    // серверные токены, выданные PHP API
-    localStorage.removeItem("pa_token");
-    localStorage.removeItem("pa_user");
+    void api.logout();
+    clearAuth();
+    setSession(GUEST);
+    setReal(EMPTY_REAL);
+    setLoaded(false);
   }, []);
 
+  /**
+   * Обновление данных: мгновенно в состоянии + асинхронно в БД.
+   * Бизнес-данные больше не живут в localStorage — только в PostgreSQL.
+   */
   const set = useCallback((patch: Partial<RealData>) => {
     setReal((r) => ({ ...r, ...patch }));
+    if (sessionRef.current.role !== "guest" && getToken()) {
+      api.putData(patch as Record<string, unknown>).catch((e) => {
+        console.warn("Синхронизация с БД не удалась:", e);
+      });
+    }
   }, []);
 
   const auth = useMemo<AuthValue>(
@@ -169,14 +171,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       session,
       live: session.role !== "guest",
       isOwner: session.role === "owner",
-      loginAs,
-      applyApiUser,
+      login,
       logout,
     }),
-    [session, loginAs, applyApiUser, logout],
+    [session, login, logout],
   );
 
-  const store = useMemo<StoreValue>(() => ({ real, set }), [real, set]);
+  const store = useMemo<StoreValue>(
+    () => ({ real, loaded, set, refreshData }),
+    [real, loaded, set, refreshData],
+  );
 
   return (
     <AuthCtx.Provider value={auth}>
@@ -184,6 +188,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     </AuthCtx.Provider>
   );
 }
+
+/* ---------------- хуки ---------------- */
 
 export function useAuth(): AuthValue {
   const v = useContext(AuthCtx);
@@ -197,19 +203,4 @@ export function useStore(): StoreValue {
   return v;
 }
 
-/** Вход по ответу сервера — модульная версия (для кода вне React-дерева).
- *  Внутри компонентов используйте applyApiUser из useAuth(). */
-export function applyApiUser(login: string, role: Role): void {
-  const s: Session =
-    role === "owner"
-      ? { role: "owner", login: login || OWNER_DISPLAY, name: "Flinferd · владелец" }
-      : { role: "user", login, name: "Алексей Морозов · эксперт" };
-  try {
-    localStorage.setItem(LS_AUTH, JSON.stringify(s));
-  } catch {
-    /* приватный режим */
-  }
-}
-
-// восстанавливаем сессию владельца по сохранённому токену pa_token до первого рендера
-restoreApiSession();
+export type { StoredUser };

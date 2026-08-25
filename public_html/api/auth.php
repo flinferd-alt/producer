@@ -1,77 +1,65 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 
-putenv("PGSSLMODE=require");
+/**
+ * auth.php — вход: POST { login, password }.
+ *  - пароль проверяется через password_verify() против bcrypt-хэша в users;
+ *  - rate-limit: 5 неудачных попыток за 15 минут (таблица login_attempts) -> 429;
+ *  - при успехе: access JWT (15 мин) в теле + refresh (30 дней) в httpOnly-cookie.
+ * Логин нечувствителен к регистру (strtolower при сравнении).
+ */
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+declare(strict_types=1);
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
+require __DIR__ . '/auth_helper.php';
+
+cors();
+method('POST');
+
+$in       = input();
+$login    = strtolower(trim((string) ($in['login'] ?? '')));
+$password = (string) ($in['password'] ?? '');
+
+if ($login === '' || $password === '') {
+    fail('Логин и пароль обязательны', 400);
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+$ip = clientIp();
+
+/* --- rate-limit: не более 5 неудачных попыток за 15 минут с одного IP --- */
+$cnt = db()->prepare(
+    "SELECT COUNT(*) FROM login_attempts
+     WHERE ip = ? AND lower(login) = ? AND success = false
+       AND created_at > now() - interval '15 minutes'"
+);
+$cnt->execute([$ip, $login]);
+if ((int) $cnt->fetchColumn() >= 5) {
+    fail('Слишком много неудачных попыток. Повторите через 15 минут.', 429);
 }
 
-try {
-    $db_host = '10.16.0.1';  // ПРИВАТНЫЙ IP!
-    $db_port = '5432';
-    $db_name = 'flinferd_prod';
-    $db_user = 'flinferd_app';
-    $db_pass = 'loal%ZLa0EpQ';
+/* --- поиск пользователя и проверка пароля --- */
+$stmt = db()->prepare('SELECT id, login, password_hash, role FROM users WHERE lower(login) = ? LIMIT 1');
+$stmt->execute([$login]);
+$user = $stmt->fetch();
 
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
-    $pdo = new PDO($dsn, $db_user, $db_pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]);
+$ok = $user !== false && password_verify($password, (string) $user['password_hash']);
 
-    $rawInput = file_get_contents('php://input');
-    $input = json_decode($rawInput, true);
+/* фиксируем попытку для rate-limit */
+db()->prepare('INSERT INTO login_attempts (ip, login, success) VALUES (?, ?, ?)')
+    ->execute([$ip, $login, $ok ? 'true' : 'false']);
 
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new Exception("Ошибка парсинга JSON: " . json_last_error_msg());
-    }
-
-    $login = isset($input['login']) ? trim($input['login']) : '';
-    $password = isset($input['password']) ? $input['password'] : '';
-
-    if (empty($login) || empty($password)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Логин и пароль обязательны']);
-        exit;
-    }
-
-    // Принимаем и Flinferd, и flinferd
-    if (strtolower($login) === 'flinferd' && $password === '$Flin914101$') {
-        $token = bin2hex(openssl_random_pseudo_bytes(32));
-        
-        echo json_encode([
-            'success' => true,
-            'token' => $token,
-            'user' => [
-                'login' => 'Flinferd',  // Возвращаем с большой для UI
-                'id' => 'owner',
-                'role' => 'owner'
-            ]
-        ]);
-    } else {
-        http_response_code(401);
-        echo json_encode(['error' => 'Неверный логин или пароль']);
-    }
-
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'Internal Server Error',
-        'message' => $e->getMessage()
-    ]);
+if (!$ok) {
+    fail('Неверный логин или пароль', 401);
 }
+
+/* --- успех: выдаём пару токенов --- */
+$tokens = issueTokens((int) $user['id'], (string) $user['login'], (string) $user['role']);
+
+json_out($tokens + [
+    'user' => [
+        'id'    => (int) $user['id'],
+        'login' => (string) $user['login'],
+        'role'  => (string) $user['role'],
+        // имя для UI: логин с заглавной буквы (фронтенд ждёт отображаемое имя)
+        'name'  => mb_strtoupper(mb_substr($user['login'], 0, 1)) . mb_substr($user['login'], 1),
+    ],
+]);

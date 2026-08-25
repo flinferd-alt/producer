@@ -1,41 +1,43 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 
-putenv("PGSSLMODE=require");
+/**
+ * launches.php
+ *   GET  /api/launches — список запусков (любой авторизованный);
+ *   POST /api/launches — создать запуск { name, expert? } (только owner).
+ */
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
+declare(strict_types=1);
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
+require __DIR__ . '/auth_helper.php';
+
+cors();
+$who = authenticate();
+$m   = method('GET', 'POST');
+
+if ($m === 'GET') {
+    $rows = db()->query(
+        'SELECT id, name, expert, stage, status, config, created_at
+         FROM launches ORDER BY created_at DESC'
+    )->fetchAll();
+    json_out($rows);
 }
 
-try {
-    $db_host = '10.16.0.1';
-    $db_port = '5432';
-    $db_name = 'flinferd_prod';
-    $db_user = 'flinferd_app';
-    $db_pass = 'loal%ZLa0EpQ';
+/* POST — создание запуска (владелец) */
+requireOwner($who);
 
-    $dsn = "pgsql:host={$db_host};port={$db_port};dbname={$db_name}";
-    $pdo = new PDO($dsn, $db_user, $db_pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]);
+$in     = input();
+$name   = trim((string) ($in['name'] ?? ''));
+$expert = trim((string) ($in['expert'] ?? ''));
 
-    $stmt = $pdo->query("SELECT id, name, expert, stage, status, created_at FROM launches ORDER BY created_at DESC");
-    $launches = $stmt->fetchAll();
-
-    echo json_encode([
-        'success' => true,
-        'data' => $launches,
-        'count' => count($launches)
-    ]);
-
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Internal Server Error', 'message' => $e->getMessage()]);
+if ($name === '') {
+    fail('Поле name обязательно', 400);
 }
+
+$stmt = db()->prepare(
+    "INSERT INTO launches (name, expert, stage, status, config)
+     VALUES (?, ?, 'unpacking', 'active', '{}'::jsonb)
+     RETURNING id, name, expert, stage, status, created_at"
+);
+$stmt->execute([$name, $expert !== '' ? $expert : null]);
+
+json_out($stmt->fetch(), 201);

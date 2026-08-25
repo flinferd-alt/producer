@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { FEED, KPIS, PIPELINE, type Tone } from "../data";
+import { FEED, PIPELINE, type Tone } from "../data";
 import { useAuth, useStore } from "../store";
-import { Bar, Chip, Dot, Head, Icon, Num, Panel, Reveal, Spark, ToneBtn, useReducedMotion, TONE_TEXT, fmt } from "../ui";
+import { Bar, Chip, Dot, Head, Icon, LockedNote, Num, Panel, Reveal, Spark, ToneBtn, useReducedMotion, TONE_TEXT, fmt } from "../ui";
 
 const SPARK_COLOR: Record<Tone, string> = { amber: "#ffb224", mint: "#3ddc97", coral: "#ff6a55", sky: "#5fb9ff", mut: "#5c7291" };
 
@@ -10,7 +10,7 @@ export default function Dashboard({ go, push }: { go: (id: string) => void; push
   const { live } = useAuth();
   const { real } = useStore();
   const [feed, setFeed] = useState(FEED);
-  const kpis = live ? real.kpis : KPIS;
+  const kpis = real.kpis; // только из БД (GET /api/data → app_data.kpis)
 
   useEffect(() => {
     if (reduced) return;
@@ -18,9 +18,52 @@ export default function Dashboard({ go, push }: { go: (id: string) => void; push
     return () => clearInterval(id);
   }, [reduced]);
 
+  if (!live) {
+    return (
+      <div className="space-y-6">
+        <LockedNote title="Панель запуска работает на реальных данных" />
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Reveal className="xl:col-span-2">
+            <Panel className="scan relative h-full overflow-hidden p-5">
+              <Head kicker="Как устроен запуск" title="Этапы под управлением агентов" />
+              <div className="space-y-2.5">
+                {PIPELINE.map((p) => (
+                  <div key={p.num} className="flex items-center gap-3.5 rounded-lg border border-line bg-deep/40 px-4 py-2.5">
+                    <span className={`font-display text-[13px] font-extrabold ${TONE_TEXT[p.tone]}`}>{p.num}</span>
+                    <span className="flex-1 text-[13px] font-medium text-ink/90">{p.title}</span>
+                    <Chip tone={p.tone}>{p.status}</Chip>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </Reveal>
+          <Reveal delay={110}>
+            <Panel className="h-full p-5">
+              <Head kicker="Путь к данным" title="Вход → PostgreSQL" />
+              <ol className="space-y-3 text-[13px] leading-relaxed text-mut">
+                <li className="flex gap-3"><span className="font-display text-amber">1</span> Вход через /api/auth.php: пароль проверяется bcrypt-хэшем в таблице users.</li>
+                <li className="flex gap-3"><span className="font-display text-amber">2</span> Сервер выдаёт access-токен на 15 минут и refresh на 30 дней.</li>
+                <li className="flex gap-3"><span className="font-display text-amber">3</span> Все показатели загружаются из app_data (PostgreSQL на Beget).</li>
+                <li className="flex gap-3"><span className="font-display text-amber">4</span> Изменения сохраняются через PUT /api/data — только владелец.</li>
+              </ol>
+              <ToneBtn className="mt-5 w-full justify-center" onClick={() => go("cabinet")}>
+                <Icon name="lock" size={14} /> Войти в кабинет
+              </ToneBtn>
+            </Panel>
+          </Reveal>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* KPI row */}
+      {kpis.length === 0 && (
+        <div className="rounded-lg border border-dashed border-line2 px-5 py-4 text-center font-mono text-[11px] tracking-wide text-dim uppercase">
+          Метрики появятся, когда финконтроль рассчитает первые показатели запуска
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
         {kpis.map((k, i) => (
           <Reveal key={k.label} delay={i * 70}>

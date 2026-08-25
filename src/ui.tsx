@@ -406,3 +406,28 @@ export function Head({ kicker, title, right }: { kicker: string; title: string; 
     </div>
   );
 }
+
+/** Заглушка для разделов с реальными данными, когда пользователь не вошёл. */
+export function LockedNote({
+  title = "Раздел с реальными данными",
+  text = "Войдите в кабинет: показатели, воронка, реклама и платежи загружаются из PostgreSQL через защищённый API.",
+}: {
+  title?: string;
+  text?: string;
+}) {
+  return (
+    <div className="panel relative overflow-hidden p-8">
+      <div className="pointer-events-none absolute -left-12 -top-12 h-40 w-40 rounded-full bg-amber/10 blur-3xl" />
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-amber/30 bg-amber/10 text-amber">
+          <Icon name="lock" size={22} />
+        </span>
+        <div className="min-w-0">
+          <div className="font-display text-[16px] font-extrabold text-ink">{title}</div>
+          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-mut">{text}</p>
+        </div>
+        <Chip tone="amber" className="sm:ml-auto">JWT · bcrypt · 15 мин</Chip>
+      </div>
+    </div>
+  );
+}
