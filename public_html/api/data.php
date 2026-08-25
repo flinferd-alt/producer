@@ -1,10 +1,10 @@
 <?php
 
 /**
- * data.php — настройки/данные кабинета в таблице app_data (key/value jsonb).
- *   GET /api/data — все ключи (любой авторизованный). Если таблица пуста,
- *                   сначала записываются структурные серверные дефолты.
- *   PUT /api/data — { key: value, ... } — апсерт ключей (только owner).
+ * data.php
+ *   GET /api/data — получить данные кабинета (app_data из БД)
+ *   PUT /api/data — обновить данные кабинета (только owner)
+ *   Белый список ключей: funnel, traffic, budget, ads, kpis, integrations, checklist, tokens, dbConns
  */
 
 declare(strict_types=1);
@@ -13,52 +13,44 @@ require __DIR__ . '/auth_helper.php';
 
 cors();
 $who = authenticate();
-$m   = method('GET', 'PUT');
-
-/* белые списки ключей: только известные разделы данных */
-const ALLOWED_KEYS = [
-    'funnel', 'traffic', 'price', 'budget', 'ads', 'txs', 'kpis',
-    'integrations', 'dbConns', 'tokens', 'checklist',
-];
-
-function fetchAllData(): array
-{
-    $rows = db()->query('SELECT key, value FROM app_data')->fetchAll();
-    if ($rows === []) {
-        seedAppDataDefaults();
-        $rows = db()->query('SELECT key, value FROM app_data')->fetchAll();
-    }
-    $out = [];
-    foreach ($rows as $row) {
-        $out[(string) $row['key']] = json_decode((string) $row['value'], true);
-    }
-    return $out;
-}
+$m = method('GET', 'PUT');
 
 if ($m === 'GET') {
-    json_out(fetchAllData());
+    // Получить все данные кабинета
+    $rows = db()->query(
+        'SELECT key, value FROM app_data ORDER BY key'
+    )->fetchAll();
+
+    $data = [];
+    foreach ($rows as $row) {
+        $data[$row['key']] = json_decode((string) $row['value'], true) ?? $row['value'];
+    }
+
+    json_out($data ?: []);
 }
 
-/* --- PUT (владелец) --- */
+/* PUT — обновить данные */
 requireOwner($who);
 
-$in      = input();
-$unknown = array_diff(array_keys($in), ALLOWED_KEYS);
-if ($unknown !== []) {
-    fail('Недопустимые ключи: ' . implode(', ', $unknown), 400);
-}
-if ($in === []) {
-    fail('Пустое тело запроса', 400);
-}
+$in = input();
 
+// Белый список
+$allowed = [
+    'funnel', 'traffic', 'budget', 'ads', 'kpis', 'integrations', 'checklist', 'tokens', 'dbConns'
+];
+
+$updated = [];
 $stmt = db()->prepare(
-    'INSERT INTO app_data (key, value, updated_at, updated_by)
-     VALUES (?, ?::jsonb, now(), ?)
-     ON CONFLICT (key) DO UPDATE
-       SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by'
+    'INSERT INTO app_data (key, value, updated_by) VALUES (?, ?::jsonb, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = ?'
 );
-foreach ($in as $key => $value) {
-    $stmt->execute([$key, json_encode($value, JSON_UNESCAPED_UNICODE), (int) $who['user_id']]);
+
+foreach ($allowed as $key) {
+    if (isset($in[$key])) {
+        $value = $in[$key];
+        $jsonValue = json_encode($value, JSON_UNESCAPED_UNICODE);
+        $stmt->execute([$key, $jsonValue, $who['user_id'], $who['user_id']]);
+        $updated[$key] = $value;
+    }
 }
 
-json_out(['updated' => array_keys($in)]);
+json_out($updated, 200);
