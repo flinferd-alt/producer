@@ -7,6 +7,26 @@ import {
 /* ---------------- доступ ---------------- */
 export type Role = "guest" | "user" | "owner";
 
+// сессия, восстановленная после перезагрузки по сохранённому серверному токену pa_token
+export function restoreApiSession(): void {
+  try {
+    const token = localStorage.getItem("pa_token");
+    if (!token) return; // нет токена — остаёмся в текущей сессии
+    const existing = readJson<Session>(LS_AUTH, { role: "guest", login: "", name: "" });
+    if (existing.role !== "guest") return; // сессия уже есть
+    const rawUser = localStorage.getItem("pa_user");
+    const u = rawUser ? (JSON.parse(rawUser) as { login?: string; role?: string }) : null;
+    const role: Role = u?.role === "owner" ? "owner" : u?.role === "user" ? "user" : "owner";
+    const s: Session =
+      role === "owner"
+        ? { role, login: u?.login || OWNER_DISPLAY, name: "Flinferd · владелец" }
+        : { role, login: u?.login || "", name: "Алексей Морозов · эксперт" };
+    localStorage.setItem(LS_AUTH, JSON.stringify(s));
+  } catch {
+    /* повреждённые данные — игнорируем */
+  }
+}
+
 // ЛОГИН ВЛАДЕЛЬЦА ВСЕГДА С МАЛЕНЬКОЙ БУКВЫ: flinferd
 // (проверка нечувствительна к регистру, для отображения используется OWNER_DISPLAY)
 export const OWNER_LOGIN = "flinferd";
@@ -176,3 +196,20 @@ export function useStore(): StoreValue {
   if (!v) throw new Error("useStore вне DataProvider");
   return v;
 }
+
+/** Вход по ответу сервера — модульная версия (для кода вне React-дерева).
+ *  Внутри компонентов используйте applyApiUser из useAuth(). */
+export function applyApiUser(login: string, role: Role): void {
+  const s: Session =
+    role === "owner"
+      ? { role: "owner", login: login || OWNER_DISPLAY, name: "Flinferd · владелец" }
+      : { role: "user", login, name: "Алексей Морозов · эксперт" };
+  try {
+    localStorage.setItem(LS_AUTH, JSON.stringify(s));
+  } catch {
+    /* приватный режим */
+  }
+}
+
+// восстанавливаем сессию владельца по сохранённому токену pa_token до первого рендера
+restoreApiSession();

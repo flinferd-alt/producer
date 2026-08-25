@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { LAUNCHES, type Tone } from "../data";
-import { applyApiSession, useAuth, useStore, OWNER_LOGIN, OWNER_PASS, USER_LOGIN, USER_PASS } from "../store";
+import { applyApiUser as applyApiUserDirect, useAuth, useStore } from "../store";
 import { Bar, Chip, Dot, Head, Icon, Panel, Reveal, ToneBtn } from "../ui";
 
 /* -------- PHP API (Beget: public_html/api) -------- */
@@ -46,7 +46,7 @@ function normalizeApiLaunch(l: ApiLaunch): LaunchUI {
 
 /* ================= ЭКРАН ВХОДА (гость) ================= */
 function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
-  const { loginAs } = useAuth();
+  const { loginAs, applyApiUser } = useAuth();
   const [login, setLogin] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -55,30 +55,67 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
   const [checking, setChecking] = useState(false);
   const [shake, setShake] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const fail = (msg: string) => {
+    const n = tries + 1;
+    setTries(n);
+    setShake(true);
+    window.setTimeout(() => setShake(false), 500);
+    setErr(n >= 3 ? "Слишком много попыток. В продакшене аккаунт блокируется на 15 минут (rate-limit на backend)." : msg);
+    setPass("");
+    setChecking(false);
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (checking) return;
+    if (checking || !login.trim() || !pass) return;
     setChecking(true);
     setErr("");
-    window.setTimeout(() => {
-      const r = loginAs(login, pass);
-      setChecking(false);
-      if (r.ok) {
+    try {
+      // реальный запрос к PHP API на Beget (public_html/api/auth.php)
+      const res = await fetch(API_AUTH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login, password: pass }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        // сервер подтвердил: сохраняем токен и user, обновляем состояние store
+        try {
+          localStorage.setItem("pa_token", String(data.token ?? ""));
+          localStorage.setItem("pa_user", JSON.stringify(data.user ?? null));
+        } catch {
+          /* приватный режим браузера */
+        }
+        const r = loginAs(login, pass);
+        if (!r.ok) {
+          // сервер принял, но локальные константы разошлись — доверяем серверу
+          const u = data.user ?? {};
+          const apiLogin = String(u.login ?? "Flinferd");
+          const apiRole: "owner" | "user" = u.role === "owner" ? "owner" : "user";
+          applyApiUserDirect(apiLogin, apiRole); // персист в localStorage (переживёт перезагрузку)
+          applyApiUser(apiLogin, apiRole); // немедленное обновление состояния store
+        }
+        setChecking(false);
         push(
-          r.role === "owner"
+          (data.user?.role ?? "owner") === "owner"
             ? "Вход владельца: реальные данные + мастер-панель доступны"
             : "Добро пожаловать! Демо-данные заменены на реальные",
           "mint",
         );
-      } else {
-        const n = tries + 1;
-        setTries(n);
-        setShake(true);
-        window.setTimeout(() => setShake(false), 500);
-        setErr(n >= 3 ? "Слишком много попыток. В продакшене аккаунт блокируется на 15 минут (rate-limit на backend)." : "Неверный логин или пароль. Проверьте раскладку и регистр.");
-        setPass("");
+        return;
       }
-    }, 650);
+      // сервер ответил ошибкой (401/400/500)
+      fail((data && typeof data.error === "string" && data.error) || "Неверный логин или пароль");
+    } catch {
+      // сеть/CORS: API недоступен — локальный ключ, чтобы прототип не ломался
+      const r = loginAs(login, pass);
+      if (r.ok) {
+        setChecking(false);
+        push("API недоступен — выполнен локальный вход (прототип-режим)", "amber");
+        return;
+      }
+      fail("Неверный логин или пароль. Проверьте раскладку и регистр.");
+    }
   };
 
   return (
@@ -148,15 +185,23 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
             </button>
           </form>
 
-          <div className="mt-6 rounded-lg border border-sky/25 bg-sky/[0.05] p-4">
-            <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.18em] text-sky uppercase"><Icon name="spark" size={13} /> демо-доступ эксперта</div>
+          <div className="mt-6 rounded-lg border border-amber/25 bg-amber/[0.05] p-4">
+            <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.18em] text-amber uppercase"><Icon name="lock" size={13} /> доступ владельца</div>
             <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[12px] text-ink/90">
-              <code className="rounded bg-deep/80 px-2 py-1 text-sky">{USER_LOGIN}</code> / <code className="rounded bg-deep/80 px-2 py-1 text-sky">{USER_PASS}</code>
-              <button onClick={() => { setLogin(USER_LOGIN); setPass(USER_PASS); }} className="cursor-pointer rounded-md border border-sky/40 px-2.5 py-1 font-mono text-[10px] tracking-wide text-sky uppercase transition-colors hover:bg-sky/10">
+              <code className="rounded bg-deep/80 px-2 py-1 text-amber">flinferd</code>
+              <span className="text-dim">/</span>
+              <code className="rounded bg-deep/80 px-2 py-1 text-amber">$Flin914101$</code>
+              <button
+                onClick={() => {
+                  setLogin("flinferd"); // ← ВСЕГДА с маленькой буквы
+                  setPass("$Flin914101$");
+                }}
+                className="cursor-pointer rounded-md border border-amber/40 px-2.5 py-1 font-mono text-[10px] tracking-wide text-amber uppercase transition-colors hover:bg-amber/10"
+              >
                 подставить
               </button>
             </div>
-            <p className="mt-2 text-[11.5px] leading-snug text-mut">Реальные данные запуска без прав владельца. Доступ владельца выдаётся лично и здесь не отображается.</p>
+            <p className="mt-2 text-[11.5px] leading-snug text-mut">Логин проверяется сервером (api/auth.php) и не чувствителен к регистру. После входа включаются реальные данные из PostgreSQL и мастер-панель.</p>
           </div>
         </Panel>
       </Reveal>
@@ -191,6 +236,32 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
   const { session, isOwner, logout } = useAuth();
   const { real, set } = useStore();
   const [ints, setInts] = useState(real.integrations);
+
+  /* запуски: сначала демо-fallback, затем реальные из PostgreSQL (api/launches.php) */
+  const [launches, setLaunches] = useState<LaunchUI[]>(LAUNCHES.map((l) => ({ ...l })));
+  const [loadingLaunches, setLoadingLaunches] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(API_LAUNCHES);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (res.ok && data?.success && Array.isArray(data.data)) {
+          setLaunches(data.data.map(normalizeApiLaunch)); // пустой массив → пустое состояние
+        }
+        // при ошибке API оставляем демо-данные из data.ts как fallback
+      } catch {
+        /* API недоступен — fallback остаётся */
+      } finally {
+        if (!cancelled) setLoadingLaunches(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const doneCount = real.checklist.filter((c) => c.done).length;
 
@@ -271,7 +342,7 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2.5">
               {[
-                { l: "запусков", v: "7" },
+                { l: "запусков", v: String(launches.length) },
                 { l: "выручка", v: "9,4 млн" },
                 { l: "ср. ROMI", v: "289%" },
               ].map((s) => (
@@ -295,29 +366,60 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
         {/* launches */}
         <Reveal delay={100} className="xl:col-span-2">
           <Panel className="h-full p-5">
-            <Head kicker="Все проекты · реальные данные" title="Запуски" right={<Chip tone="mint">PostgreSQL · таблица launches</Chip>} />
+            <Head
+              kicker="Все проекты · таблица launches"
+              title="Запуски"
+              right={
+                loadingLaunches ? (
+                  <span className="flex items-center gap-1.5 rounded-md border border-line bg-panel2 px-2.5 py-1">
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-amber" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-amber" />
+                    <span className="typing-dot h-1.5 w-1.5 rounded-full bg-amber" />
+                    <span className="font-mono text-[10px] tracking-wider text-dim uppercase">из БД</span>
+                  </span>
+                ) : (
+                  <Chip tone="mint">PostgreSQL · {launches.length}</Chip>
+                )
+              }
+            />
             <div className="space-y-3">
-              {LAUNCHES.map((l) => (
-                <div key={l.name} className="rounded-lg border border-line bg-deep/40 p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-line2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <Dot tone={l.tone} pulse={l.status === "активен"} />
-                      <div>
-                        <div className="text-[13.5px] font-bold text-ink">{l.name}</div>
-                        <div className="font-mono text-[10.5px] text-dim">{l.expert} · {l.stage}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="font-mono text-[12px] font-bold text-amber">{l.revenue}</div>
-                        <div className="font-mono text-[10px] text-dim">ROMI {l.romi}</div>
-                      </div>
-                      <Chip tone={l.tone}>{l.status}</Chip>
-                    </div>
-                  </div>
-                  <Bar pct={l.progress} tone={l.tone} className="mt-3" />
+              {loadingLaunches ? (
+                <div className="grid place-items-center rounded-lg border border-dashed border-line2 py-12">
+                  <span className="flex items-center gap-2.5 font-mono text-[11px] tracking-[0.18em] text-dim uppercase">
+                    <span className="typing-dot h-2 w-2 rounded-full bg-amber" />
+                    <span className="typing-dot h-2 w-2 rounded-full bg-amber" />
+                    <span className="typing-dot h-2 w-2 rounded-full bg-amber" />
+                    читаем launches
+                  </span>
                 </div>
-              ))}
+              ) : launches.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-line2 px-6 py-10 text-center">
+                  <div className="font-mono text-[12px] tracking-wide text-mut uppercase">Запусков пока нет</div>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-dim">Таблица launches в базе пуста. Начните с распаковки — оркестратор создаст первую запись сам.</p>
+                </div>
+              ) : (
+                launches.map((l, i) => (
+                  <div key={`${l.name}-${i}`} className="rounded-lg border border-line bg-deep/40 p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-line2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <Dot tone={l.tone} pulse={l.status === "активен"} />
+                        <div>
+                          <div className="text-[13.5px] font-bold text-ink">{l.name}</div>
+                          <div className="font-mono text-[10.5px] text-dim">{l.expert} · {l.stage}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-mono text-[12px] font-bold text-amber">{l.revenue}</div>
+                          <div className="font-mono text-[10px] text-dim">ROMI {l.romi}</div>
+                        </div>
+                        <Chip tone={l.tone}>{l.status}</Chip>
+                      </div>
+                    </div>
+                    <Bar pct={l.progress} tone={l.tone} className="mt-3" />
+                  </div>
+                ))
+              )}
             </div>
           </Panel>
         </Reveal>
