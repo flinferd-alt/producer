@@ -1,0 +1,27 @@
+# ============================================================
+# Корневой .htaccess: SPA-роутинг + защита конфигов.
+# Если у вас уже есть рабочий .htaccess — добавьте только блок
+# "RewriteCond %{REQUEST_URI} !^/api/" перед SPA-правилом.
+# ============================================================
+
+# Запрет доступа к служебным файлам (окружение, composer, SQL)
+<FilesMatch "^\.env|composer\.(json|lock)$">
+    Require all denied
+</FilesMatch>
+
+RewriteEngine On
+RewriteBase /
+
+# /api/* всегда уходит PHP-скриптам (в т.ч. pretty-пути — их рулит api/.htaccess)
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^ - [L]
+
+# SPA: существующие файлы/папки отдаём как есть, остальное — в index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]
+
+# Сжатие статики
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
