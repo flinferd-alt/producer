@@ -1,0 +1,15 @@
+RewriteEngine On
+# Явно указываем серверу, что мы находимся в папке api
+RewriteBase /api/
+
+# 1. Запросы с ID запуска
+RewriteRule ^launches/([0-9]+)/brief/?$ launches_brief.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/niche/?$ launches_niche.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/plan/?$ launches_plan.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/?$ launches_detail.php?id=$1 [L,QSA]
+
+# 2. Стандартные запросы
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.*)$ $1.php [L,QSA]
