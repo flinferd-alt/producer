@@ -1,4 +1,4 @@
-<?php
+"<?php
 
 declare(strict_types=1);
 
@@ -24,6 +24,7 @@ try {
     require_once __DIR__ . '/config.php';
     require_once __DIR__ . '/auth_helper.php';
     require_once __DIR__ . '/yandex_gpt.php';
+    require_once __DIR__ . '/search_api.php';
 
     cors();
     authenticate();
@@ -38,8 +39,13 @@ try {
         fail('Запуск не найден', 404);
     }
 
+    /* ==================== GET ==================== */
     if ($m === 'GET') {
-        $n = $db->prepare('SELECT id, score, niche_name, verdict, demand, demand_growth, avg_check, margin, cpc, created_at FROM niche_snapshots WHERE launch_id = ? ORDER BY id DESC LIMIT 1');
+        $n = $db->prepare(
+            'SELECT id, score, niche_name, verdict, demand, demand_growth, avg_check, margin, cpc,
+                    demand_source, competitors_source, source_payload, search_checked_at, created_at
+             FROM niche_snapshots WHERE launch_id = ? ORDER BY id DESC LIMIT 1'
+        );
         $n->execute([$id]);
         $row = $n->fetch(PDO::FETCH_ASSOC);
 
@@ -47,106 +53,127 @@ try {
             fail('Анализ ниши ещё не сохранялся', 404);
         }
 
-        $c = $db->prepare('SELECT name, students, price_check as check, rating, weak, power FROM competitors WHERE snapshot_id = ? ORDER BY power DESC');
+        $c = $db->prepare(
+            'SELECT name, students, price_check as check, rating, weak, power
+             FROM competitors WHERE snapshot_id = ? ORDER BY power DESC'
+        );
         $c->execute([(int) $row['id']]);
 
-        json_out(array_merge($row, ['competitors' => $c->fetchAll(PDO::FETCH_ASSOC)]));
+        $kw = $db->prepare(
+            'SELECT phrase, count, is_main FROM wordstat_keywords WHERE snapshot_id = ? ORDER BY count DESC LIMIT 50'
+        );
+        $kw->execute([(int) $row['id']]);
+
+        $row['competitors']     = $c->fetchAll(PDO::FETCH_ASSOC);
+        $row['wordstat_top']    = $kw->fetchAll(PDO::FETCH_ASSOC);
+
+        json_out($row);
     }
 
-    /* --- POST --- */
+    /* ==================== POST ==================== */
     if ($m === 'POST') {
-        $in = input();
 
-        $score = (int) ($in['score'] ?? 0);
-        $nicheName = (string) ($in['niche_name'] ?? '');
-        $verdict = (string) ($in['verdict'] ?? '');
+        // 1. Извлекаем ключевую фразу ниши из брифа
+        $nichePhrase = extractNichePhrase($db, $id);
 
-        $demand = (int) ($in['demand'] ?? 0);
-        $demandGrowth = (int) ($in['demand_growth'] ?? 0);
-        $avgCheck = (int) ($in['avg_check'] ?? 0);
-        $margin = (int) ($in['margin'] ?? 0);
-        $cpc = (int) ($in['cpc'] ?? 0);
+        // 2. Источники данных (по умолчанию ai_estimate)
+        $demandSource      = 'ai_estimate';
+        $competitorsSource = 'ai_estimate';
+        $sourcePayload     = [];
 
-        $competitors = (array) ($in['competitors'] ?? []);
-
-        // ГЕНЕРИРУЕМ ЧЕРЕЗ YANDEX GPT
-        if ($nicheName === '' && env('YANDEX_GPT_API_KEY')) {
-            $b = $db->prepare('SELECT summary FROM briefs WHERE launch_id = ? ORDER BY id DESC LIMIT 1');
-            $b->execute([$id]);
-            $brief = $b->fetch(PDO::FETCH_ASSOC);
-            $briefText = $brief ? ($brief['summary'] ?: 'Описание отсутствует') : 'Описание отсутствует';
-
-            $prompt = "Ты — ИИ-продюсер онлайн-курсов и аналитик рынка РФ. Проанализируй этот бриф эксперта: '$briefText'.
-Верни ответ СТРОГО в формате валидного JSON (только json, без текста вокруг), со следующей структурой:
-{
-  \"score\": (число от 60 до 100, насколько ниша привлекательна),
-  \"niche_name\": \"(Краткое название ниши, например 'Обучение маркетплейсам')\",
-  \"verdict\": \"(Краткий вердикт: заходить в нишу или нет, 2-3 предложения)\",
-  \"demand\": (реалистичный прогноз количества показов в Wordstat в месяц, число от 10000 до 500000),
-  \"demand_growth\": (прогноз роста спроса в процентах, например 15 или -5),
-  \"avg_check\": (реалистичный средний чек курса в рублях, число),
-  \"margin\": (процент маржинальности от 30 до 85, число),
-  \"cpc\": (прогноз стоимости клика в Директе в рублях, число),
-  \"competitors\": [
-    {
-      \"name\": \"(Название школы-конкурента)\",
-      \"students\": (число учеников от 100 до 5000),
-      \"check\": (средний чек конкурента в рублях),
-      \"rating\": (рейтинг конкурента, число с точкой, например 4.8),
-      \"weak\": \"(В чем их главная слабость)\",
-      \"power\": (сила конкурента, число от 40 до 95)
-    }
-  ]
-}
-Придумай 3-х реалистичных конкурентов. ВНИМАНИЕ: выведи ТОЛЬКО JSON, больше ни одного слова.";
-
-            try {
-                $rawResponse = callYandexGPT($prompt, 0.4, 2000);
-
-                // СУПЕР-ПАРСЕР: Ищем JSON от первой { до последней }
-                $cleanJson = '';
-                if (preg_match('/\{.*\}/s', $rawResponse, $matches)) {
-                    $cleanJson = $matches[0];
-                } else {
-                    $cleanJson = $rawResponse;
-                }
-
-                $parsed = json_decode($cleanJson, true);
-
-                if (is_array($parsed) && isset($parsed['score'])) {
-                    $score = (int) ($parsed['score'] ?? 80);
-                    $nicheName = (string) ($parsed['niche_name'] ?? 'Ниша определена');
-                    $verdict = (string) ($parsed['verdict'] ?? 'Анализ завершен успешно.');
-
-                    $demand = (int) ($parsed['demand'] ?? 150000);
-                    $demandGrowth = (int) ($parsed['demand_growth'] ?? 10);
-                    $avgCheck = (int) ($parsed['avg_check'] ?? 35000);
-                    $margin = (int) ($parsed['margin'] ?? 65);
-                    $cpc = (int) ($parsed['cpc'] ?? 80);
-
-                    $competitors = (array) ($parsed['competitors'] ?? []);
-                } else {
-                    $jsonError = json_last_error_msg();
-                    $preview = mb_substr($rawResponse, 0, 200);
-                    throw new Exception("JSON сломан ($jsonError). Сырой ответ: " . $preview . "...");
-                }
-            } catch (Throwable $e) {
-                $score = 75; $nicheName = "Ниша из брифа"; 
-                $verdict = "Сгенерировано по умолчанию (ошибка: " . $e->getMessage() . ")";
-                $demand = 50000; $demandGrowth = 5; $avgCheck = 20000; $margin = 50; $cpc = 50;
-                $competitors = [];
-            }
+        // 3. Wordstat: реальный спрос из Search API
+        $wordstatTop = null;
+        try {
+            $wordstatTop = searchApiWordstatTop($nichePhrase, 100);
+            $demandSource = 'wordstat';
+            $sourcePayload['wordstat_query'] = $nichePhrase;
+            $sourcePayload['wordstat_total'] = $wordstatTop['totalCount'];
+        } catch (Throwable $e) {
+            $sourcePayload['wordstat_error'] = $e->getMessage();
         }
 
+        // 4. Конкуренты: веб-поиск через Search API
+        $searchDocs = [];
+        try {
+            $searchQuery = $nichePhrase . ' курс обучение школа';
+            $searchDocs  = searchApiWebDocs($searchQuery, 10);
+            if (!empty($searchDocs)) {
+                $competitorsSource = 'search';
+                $sourcePayload['search_query'] = $searchQuery;
+                $sourcePayload['search_docs_count'] = count($searchDocs);
+            }
+        } catch (Throwable $e) {
+            $sourcePayload['search_error'] = $e->getMessage();
+        }
+
+        // 5. Считаем demand из Wordstat
+        $demand      = 0;
+        $demandGrowth = 0;
+        if ($wordstatTop !== null) {
+            $demand = $wordstatTop['totalCount'];
+            // demand_growth пока 0 — потребуется GetDynamics для тренда
+        }
+
+        // 6. YandexGPT: анализирует реальные данные, НЕ фабрикует цифры
+        $score     = 0;
+        $nicheName = $nichePhrase;
+        $verdict   = '';
+        $avgCheck  = 0;
+        $margin    = 0;
+        $cpc       = 0;
+        $competitors = [];
+
+        $briefText = extractBriefText($db, $id);
+
+        try {
+            $prompt = buildNicheAnalysisPrompt($briefText, $nichePhrase, $wordstatTop, $searchDocs);
+            $rawResponse = callYandexGPT($prompt, 0.3, 3000);
+
+            // Парсим JSON от YandexGPT
+            $cleanJson = '';
+            if (preg_match('/\\{.*\\}/s', $rawResponse, $matches)) {
+                $cleanJson = $matches[0];
+            }
+            $parsed = json_decode($cleanJson, true);
+
+            if (is_array($parsed) && isset($parsed['score'])) {
+                $score     = (int) ($parsed['score'] ?? 0);
+                $nicheName = (string) ($parsed['niche_name'] ?? $nichePhrase);
+                $verdict   = (string) ($parsed['verdict'] ?? '');
+                $avgCheck  = (int) ($parsed['avg_check'] ?? 0);
+                $margin    = (int) ($parsed['margin'] ?? 0);
+                $cpc       = (int) ($parsed['cpc'] ?? 0);
+                $competitors = (array) ($parsed['competitors'] ?? []);
+            } else {
+                $sourcePayload['gpt_parse_error'] = json_last_error_msg();
+                $sourcePayload['gpt_raw_preview'] = mb_substr($rawResponse, 0, 300);
+            }
+        } catch (Throwable $e) {
+            $sourcePayload['gpt_error'] = $e->getMessage();
+            $score   = 0;
+            $verdict = 'Ошибка ИИ-анализа: ' . $e->getMessage();
+        }
+
+        // 7. Сохраняем в БД
         $db->beginTransaction();
         try {
             $st = $db->prepare(
-                'INSERT INTO niche_snapshots (launch_id, score, niche_name, verdict, demand, demand_growth, avg_check, margin, cpc)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id'
+                'INSERT INTO niche_snapshots
+                    (launch_id, score, niche_name, verdict, demand, demand_growth,
+                     avg_check, margin, cpc, demand_source, competitors_source,
+                     source_payload, search_checked_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, now())
+                 RETURNING id'
             );
-            $st->execute([$id, $score, $nicheName, $verdict, $demand, $demandGrowth, $avgCheck, $margin, $cpc]);
+            $st->execute([
+                $id, $score, $nicheName, $verdict,
+                $demand, $demandGrowth, $avgCheck, $margin, $cpc,
+                $demandSource, $competitorsSource,
+                json_encode($sourcePayload, JSON_UNESCAPED_UNICODE),
+            ]);
             $snapshotId = (int) $st->fetchColumn();
 
+            // Конкуренты
             $ins = $db->prepare(
                 'INSERT INTO competitors (snapshot_id, name, students, price_check, rating, weak, power)
                  VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -164,6 +191,23 @@ try {
                     ]);
                 }
             }
+
+            // Топ-фразы Wordstat
+            if ($wordstatTop !== null && !empty($wordstatTop['results'])) {
+                $kwIns = $db->prepare(
+                    'INSERT INTO wordstat_keywords (launch_id, snapshot_id, phrase, count, is_main)
+                     VALUES (?, ?, ?, ?, ?)'
+                );
+                foreach ($wordstatTop['results'] as $i => $kw) {
+                    $kwIns->execute([
+                        $id, $snapshotId,
+                        (string) ($kw['phrase'] ?? ''),
+                        (int) ($kw['count'] ?? 0),
+                        ($i === 0),
+                    ]);
+                }
+            }
+
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();
@@ -184,3 +228,139 @@ try {
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
+/* ================================================================
+   Вспомогательные функции
+   ================================================================ */
+
+/**
+ * Извлекает ключевую фразу ниши из brief_answers.
+ * Сначала ищет ответ с key='niche', затем по лейблу.
+ * Фолбэк — название запуска.
+ */
+function extractNichePhrase(PDO $db, int $launchId): string
+{
+    // Пытаемся взять из brief_answers -> key = 'niche'
+    $ba = $db->prepare(
+        'SELECT ba.value FROM brief_answers ba
+         JOIN briefs b ON b.id = ba.brief_id
+         WHERE b.launch_id = ? AND ba.key = ? AND ba.value != \'\'
+         ORDER BY b.id DESC LIMIT 1'
+    );
+    $ba->execute([$launchId, 'niche']);
+    $row = $ba->fetch(PDO::FETCH_ASSOC);
+    if ($row && trim($row['value']) !== '') {
+        return trim($row['value']);
+    }
+
+    // Фолбэк: название запуска
+    $ln = $db->prepare('SELECT name FROM launches WHERE id = ?');
+    $ln->execute([$launchId]);
+    $launch = $ln->fetch(PDO::FETCH_ASSOC);
+    if ($launch && trim($launch['name']) !== '') {
+        return trim($launch['name']);
+    }
+
+    return 'онлайн-курс';
+}
+
+/**
+ * Извлекает текст брифа для промпта YandexGPT.
+ */
+function extractBriefText(PDO $db, int $launchId): string
+{
+    $b = $db->prepare('SELECT summary FROM briefs WHERE launch_id = ? ORDER BY id DESC LIMIT 1');
+    $b->execute([$launchId]);
+    $brief = $b->fetch(PDO::FETCH_ASSOC);
+
+    if ($brief && trim($brief['summary'] ?? '') !== '') {
+        return trim($brief['summary']);
+    }
+
+    // Если summary нет, собираем из ответов
+    $ba = $db->prepare(
+        'SELECT ba.label, ba.value FROM brief_answers ba
+         JOIN briefs b ON b.id = ba.brief_id
+         WHERE b.launch_id = ? AND ba.value != \'\'
+         ORDER BY ba.id'
+    );
+    $ba->execute([$launchId]);
+    $lines = [];
+    foreach ($ba->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $lines[] = '- ' . ($a['label'] ?? 'Вопрос') . ': ' . $a['value'];
+    }
+
+    return !empty($lines) ? implode(\"\\n\", $lines) : 'Описание ниши отсутствует';
+}
+
+/**
+ * Строит промпт для YandexGPT на основе реальных данных.
+ *
+ * Важно: нейросеть анализирует, а не фабрикует.
+ * demand берётся из Wordstat (уже посчитан), а не придумывается.
+ * Конкуренты выявляются на основе сниппетов поиска.
+ */
+function buildNicheAnalysisPrompt(
+    string $briefText,
+    string $nichePhrase,
+    ?array $wordstatTop,
+    array $searchDocs
+): string {
+    $wordstatSection = '';
+    if ($wordstatTop !== null) {
+        $topPhrases = '';
+        $limit = 20;
+        foreach ($wordstatTop['results'] as $i => $r) {
+            if ($i >= $limit) break;
+            $topPhrases .= '  - ' . $r['phrase'] . ': ' . number_format($r['count'], 0, '', ' ') . ' показов/мес' . \"\\n\";
+        }
+        $wordstatSection = \"\\n\\n--- ДАННЫЕ WORDSTAT (реальные) ---\\n\"
+            . 'Суммарный спрос по фразе \"' . $nichePhrase . '\": '
+            . number_format($wordstatTop['totalCount'], 0, '', ' ') . ' показов/мес' . \"\\n\"
+            . 'Топ фраз:\\n' . $topPhrases;
+    } else {
+        $wordstatSection = \"\\n\\n--- ДАННЫЕ WORDSTAT ---\\nНедоступны. Оцени спрос примерно, но укажи в verdict, что спрос не подтверждён Wordstat.\";
+    }
+
+    $searchSection = '';
+    if (!empty($searchDocs)) {
+        $searchSection = \"\\n\\n--- РЕЗУЛЬТАТЫ ПОИСКА КОНКУРЕНТОВ ---\\n\";
+        foreach ($searchDocs as $i => $doc) {
+            $searchSection .= ($i + 1) . '. [' . ($doc['title'] ?? 'Без заголовка') . '](' . ($doc['url'] ?? '') . \")\\n\"
+                . '   Сниппет: ' . ($doc['snippet'] ?? 'нет') . \"\\n\";
+        }
+        $searchSection .= \"\\nНа основе этих сниппетов определи до 5 конкурентов (школ/курсов) в нише.\";
+    } else {
+        $searchSection = \"\\n\\n--- РЕЗУЛЬТАТЫ ПОИСКА КОНКУРЕНТОВ ---\\nНедоступны. Опиши конкурентов на основе брифа, но укажи, что данные не подтверждены поиском.\";
+    }
+
+    return 'Ты — ИИ-продюсер онлайн-курсов и аналитик рынка РФ. Проанализируй нишу на основе реальных данных ниже.'
+        . \"\\n\\n--- БРИФ ЭКСПЕРТА ---\\n\" . $briefText
+        . $wordstatSection
+        . $searchSection
+        . \"\\n\\n--- ЗАДАЧА ---\\n\"
+        . 'Верни ответ СТРОГО в формате валидного JSON (только JSON, без текста вокруг):' . \"\\n\"
+        . \"{\\n\"
+        . '  \"score\": число от 1 до 100 (оценка привлекательности ниши на основе данных),' . \"\\n\"
+        . '  \"niche_name\": \"Краткое название ниши\"' . \"\\n\"
+        . '  \"verdict\": \"Стратегический вывод: заходить или нет, 2-3 предложения на основе данных выше\"' . \"\\n\"
+        . '  \"avg_check\": реалистичный средний чек курса в рублях (число)' . \"\\n\"
+        . '  \"margin\": процент маржинальности от 30 до 85 (число)' . \"\\n\"
+        . '  \"cpc\": прогноз стоимости клика в Директе в рублях (число)' . \"\\n\"
+        . '  \"competitors\": [' . \"\\n\"
+        . '    {' . \"\\n\"
+        . '      \"name\": \"Название школы/курса из сниппетов поиска\"' . \"\\n\"
+        . '      \"students\": 0 (если нет точных данных — ставь 0, не придумывай)' . \"\\n\"
+        . '      \"check\": 0 (если нет точных данных — ставь 0, не придумывай)' . \"\\n\"
+        . '      \"rating\": 0 (если нет точных данных — ставь 0)' . \"\\n\"
+        . '      \"weak\": \"Слабое место, выявленное из сниппета или брифа\"' . \"\\n\"
+        . '      \"power\": число от 10 до 95 (оценка силы конкурента)' . \"\\n\"
+        . '    }' . \"\\n\"
+        . '  ]' . \"\\n\"
+        . \"}\\n\"
+        . \"\\nВНИМАНИЕ:\\n\"
+        . '- demand (спрос) НЕ придумывай — он уже посчитан из Wordstat и сохранён отдельно.' . \"\\n\"
+        . '- Если в сниппетах нет данных о числе учеников или чеке конкурента — ставь 0.' . \"\\n\"
+        . '- Конкурентов определяй ТОЛЬКО на основе найденных сниппетов, не выдумывай несуществующие школы.' . \"\\n\"
+        . '- Выведи ТОЛЬКО JSON, больше ни одного слова.';
+}"

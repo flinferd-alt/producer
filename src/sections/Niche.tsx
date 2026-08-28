@@ -13,6 +13,12 @@ interface Competitor {
   power: number;
 }
 
+interface WordstatKeyword {
+  phrase: string;
+  count: number;
+  is_main: boolean;
+}
+
 interface NicheData {
   score: number;
   niche_name: string;
@@ -23,6 +29,10 @@ interface NicheData {
   margin: number;
   cpc: number;
   competitors: Competitor[];
+  demand_source: "wordstat" | "ai_estimate";
+  competitors_source: "search" | "ai_estimate";
+  wordstat_top: WordstatKeyword[];
+  search_checked_at?: string;
   created_at?: string;
 }
 
@@ -33,7 +43,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
   const [mode, setMode] = useState<"loading" | "empty" | "generating" | "data">("loading");
   const [data, setData] = useState<NicheData | null>(null);
 
-  // Загрузка данных при смене запуска
+    // Загрузка данных при смене запуска
   useEffect(() => {
     if (!live || !activeLaunchId) {
       setMode("data");
@@ -48,6 +58,9 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         margin: NICHE.margin,
         cpc: NICHE.cpc,
         competitors: COMPETITORS,
+        demand_source: "ai_estimate",
+        competitors_source: "ai_estimate",
+        wordstat_top: [],
       });
       return;
     }
@@ -74,23 +87,21 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     return () => { mounted = false; };
   }, [activeLaunchId, live, push]);
 
-  // Запуск "ИИ-анализа" (отправка POST-запроса на сервер)
+  // Запуск ИИ-анализа: POST → бэкенд идёт в Search API + YandexGPT
   const generateNiche = async () => {
     if (!live || !activeLaunchId) return;
 
     setMode("generating");
-    push("Агент-аналитик запущен: отправляем бриф в YandexGPT...", "amber");
+    push("Агент-аналитик запущен: идём в Wordstat и поиск конкурентов...", "amber");
 
     try {
-      // Отправляем пустой body. Бэкенд сам сходит в YandexGPT, распарсит JSON и сохранит в БД!
       await apiFetch(`/launches/${activeLaunchId}/niche`, {
         method: "POST",
         body: {},
       });
 
-      push("Анализ ниши завершен нейросетью!", "mint");
+      push("Анализ ниши завершён: данные Wordstat и конкурентов сохранены", "mint");
 
-      // Сразу же запрашиваем свежие сгенерированные данные
       const newData = await apiFetch<NicheData>(`/launches/${activeLaunchId}/niche`);
       setData(newData);
       setMode("data");
@@ -100,8 +111,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     }
   };
 
-
-  if (!activeLaunchId && live) {
+    if (!activeLaunchId && live) {
     return (
       <div className="grid place-items-center rounded-2xl border border-dashed border-line py-24 text-center">
         <Icon name="spark" size={32} className="mb-4 text-dim" />
@@ -132,7 +142,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         </div>
         <div className="font-display text-xl font-bold text-ink">Ниша еще не проанализирована</div>
         <p className="mt-2 max-w-md text-[13px] text-mut leading-relaxed">
-          Нажмите кнопку ниже, чтобы ИИ-агент собрал данные о рынке, изучил конкурентов и рассчитал потенциал для текущего запуска.
+          Нажмите кнопку ниже, чтобы ИИ-агент собрал данные о рынке из Wordstat, изучил конкурентов через поиск Яндекса и рассчитал потенциал.
         </p>
         <div className="mt-6">
           <ToneBtn onClick={generateNiche} tone="mint">
@@ -150,7 +160,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
            <Icon name="bot" size={24} />
         </div>
         <span className="font-mono text-[11px] tracking-wider text-amber uppercase">
-           Анализируем Wordstat и конкурентов<span className="caret">…</span>
+           Запрашиваем Wordstat и поиск конкурентов<span className="caret">…</span>
         </span>
       </div>
     );
@@ -160,8 +170,19 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
   const safeData = data || { 
     score: 0, niche_name: "Неизвестно", verdict: "", 
     demand: 0, demand_growth: 0, avg_check: 0, margin: 0, cpc: 0, 
-    competitors: [] 
+    competitors: [],
+    demand_source: "ai_estimate" as const,
+    competitors_source: "ai_estimate" as const,
+    wordstat_top: [],
   };
+
+  const demandBadge = safeData.demand_source === "wordstat" 
+    ? <Chip tone="mint">Wordstat · реальные данные</Chip> 
+    : <Chip tone="amber">оценка ИИ</Chip>;
+
+  const compBadge = safeData.competitors_source === "search" 
+    ? <Chip tone="sky">поиск Яндекса</Chip> 
+    : <Chip tone="amber">оценка ИИ</Chip>;
 
   return (
     <div className="space-y-6">
@@ -186,7 +207,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
               <div>
                 <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Привлекательность ниши</div>
                 <div className="mt-1 font-display text-lg font-bold leading-tight text-ink">{safeData.niche_name}</div>
-                <Chip tone="mint" className="mt-2.5">▲ окно 9–12 мес</Chip>
+                <div className="mt-2.5">{demandBadge}</div>
               </div>
             </div>
           </Panel>
@@ -195,17 +216,19 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         <Reveal delay={90} className="xl:col-span-2">
           <Panel className="h-full p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Спрос · Wordstat, прогноз показов/мес</div>
-              <Chip tone={safeData.demand_growth > 0 ? "mint" : "coral"}>
-                {safeData.demand_growth > 0 ? "+" : ""}{safeData.demand_growth}% за квартал
-              </Chip>
+              <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Спрос · показов/мес</div>
+              <div className="flex items-center gap-2">
+                <Chip tone={safeData.demand_growth > 0 ? "mint" : "coral"}>
+                  {safeData.demand_growth > 0 ? "+" : ""}{safeData.demand_growth}%
+                </Chip>
+                {demandBadge}
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-end gap-6">
               <div>
                 <Num value={safeData.demand} className="font-display text-3xl font-extrabold text-ink" />
                 <div className="mt-1 font-mono text-[10.5px] text-dim">показов в месяц</div>
               </div>
-              {/* Спайк-график оставляем статичным для визуала (или можно генерировать массив точек на основе спроса) */}
               <div className="hidden sm:block">
                 <Spark data={NICHE.wordstat} color="#3ddc97" w={220} h={56} />
               </div>
@@ -225,7 +248,6 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
           </Panel>
         </Reveal>
       </div>
-
       {/* competitors */}
       <Reveal>
         <Panel className="overflow-hidden">
@@ -234,9 +256,12 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
               <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Агент-аналитик · БД: competitors</div>
               <div className="font-display text-lg font-bold">Конкуренты</div>
             </div>
-            <ToneBtn tone="ghost" onClick={generateNiche}>
-              <Icon name="refresh" size={14} /> Пересканировать
-            </ToneBtn>
+            <div className="flex items-center gap-2">
+              {compBadge}
+              <ToneBtn tone="ghost" onClick={generateNiche}>
+                <Icon name="refresh" size={14} /> Пересканировать
+              </ToneBtn>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left">
@@ -278,6 +303,28 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         </Panel>
       </Reveal>
 
+      {/* Wordstat топ-фразы */}
+      {safeData.wordstat_top.length > 0 && (
+        <Reveal>
+          <Panel className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Yandex Wordstat · топ фраз</div>
+                <div className="font-display text-lg font-bold">Реальный спрос по ключам</div>
+              </div>
+              {demandBadge}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {safeData.wordstat_top.map((kw, i) => (
+                <div key={`${kw.phrase}-${i}`} className="rounded-lg border border-line bg-panel2/50 px-3 py-2">
+                  <span className="text-[12.5px] font-medium text-ink/90">{kw.phrase}</span>
+                  <span className="ml-2 font-mono text-[11px] text-mint">{fmt(kw.count)}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </Reveal>
+      )}
       {/* segments + swot (оставляем статику) */}
       <div className="grid gap-4 xl:grid-cols-5">
         <Reveal className="xl:col-span-3">
