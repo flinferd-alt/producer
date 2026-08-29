@@ -43,7 +43,7 @@ try {
     if ($m === 'GET') {
         $n = $db->prepare(
             'SELECT id, score, niche_name, verdict, demand, demand_growth, avg_check, margin, cpc,
-                    demand_source, competitors_source, source_payload, search_checked_at, created_at
+                    demand_source, competitors_source, source_payload, segments, search_checked_at, created_at
              FROM niche_snapshots WHERE launch_id = ? ORDER BY id DESC LIMIT 1'
         );
         $n->execute([$id]);
@@ -128,6 +128,7 @@ try {
         $margin      = 0;
         $cpc         = 0;
         $competitors = [];
+        $segments    = [];
 
         $briefText = extractBriefText($db, $id);
 
@@ -148,6 +149,7 @@ try {
                 $margin      = (int) ($parsed['margin'] ?? 0);
                 $cpc         = (int) ($parsed['cpc'] ?? 0);
                 $competitors = (array) ($parsed['competitors'] ?? []);
+                $segments    = (array) ($parsed['segments'] ?? []);
             } else {
                 $sourcePayload['gpt_parse_error'] = json_last_error_msg();
             }
@@ -165,8 +167,8 @@ try {
                 'INSERT INTO niche_snapshots
                     (launch_id, score, niche_name, verdict, demand, demand_growth,
                      avg_check, margin, cpc, demand_source, competitors_source,
-                     source_payload, search_checked_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, now())
+                     source_payload, segments, search_checked_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, now())
                  RETURNING id'
             );
             $st->execute([
@@ -174,6 +176,7 @@ try {
                 $demand, $demandGrowth, $avgCheck, $margin, $cpc,
                 $demandSource, $competitorsSource,
                 json_encode($sourcePayload, JSON_UNESCAPED_UNICODE),
+                json_encode($segments, JSON_UNESCAPED_UNICODE),
             ]);
             $snapshotId = (int) $st->fetchColumn();
 
@@ -513,6 +516,15 @@ function buildNicheAnalysisPrompt(
         . '  "avg_check": реалистичный средний чек курса в рублях (число),' . $nl
         . '  "margin": процент маржинальности от 30 до 85 (число),' . $nl
         . '  "cpc": прогноз стоимости клика в Директе в рублях (число),' . $nl
+        . '  "segments": [' . $nl
+        . '    {' . $nl
+        . '      "title": "Краткое название сегмента ЦА (3-5 слов)",' . $nl
+        . '      "share": примерная доля сегмента в нише, число от 5 до 60,' . $nl
+        . '      "pain": "Главная боль сегмента, 1 предложение",' . $nl
+        . '      "gain": "Какую ценность даёт курс, 1 предложение",' . $nl
+        . '      "check": "Ориентир платежеспособности, например \\"до 25 000 ₽\\"",' . $nl
+        . '    }' . $nl
+        . '  ],' . $nl
         . '  "competitors": [' . $nl
         . '    {' . $nl
         . '      "name": "Название школы/курса из сниппетов поиска",' . $nl
@@ -527,6 +539,8 @@ function buildNicheAnalysisPrompt(
         . $nl . 'ВНИМАНИЕ:' . $nl
         . '- demand (спрос) НЕ придумывай — он уже посчитан из Wordstat и сохранён отдельно.' . $nl
         . '- score НЕ придумывай — он рассчитается по формуле отдельно.' . $nl
+        . '- Сегментов ЦА верни от 1 до 4: столько, сколько реально имеет смысл в этой нише.' . $nl
+        . '- Если ниша узкая — верни 1-2 сегмента, если широкая — до 4. Не выдумывай лишние.' . $nl
         . '- Если в сниппетах нет данных о числе учеников или чеке конкурента — ставь 0.' . $nl
         . '- Конкурентов определяй ТОЛЬКО на основе найденных сниппетов, не выдумывай несуществующие школы.' . $nl
         . '- Выведи ТОЛЬКО JSON, больше ни одного слова.';

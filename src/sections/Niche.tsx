@@ -32,6 +32,7 @@ interface NicheData {
   demand_source: "wordstat" | "ai_estimate";
   competitors_source: "search" | "ai_estimate";
   wordstat_top: WordstatKeyword[];
+  segments: { title: string; share: number; pain: string; gain: string; check: string }[];
   search_checked_at?: string;
   created_at?: string;
 }
@@ -61,6 +62,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         demand_source: "ai_estimate",
         competitors_source: "ai_estimate",
         wordstat_top: [],
+        segments: SEGMENTS,
       });
       return;
     }
@@ -174,7 +176,15 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     demand_source: "ai_estimate" as const,
     competitors_source: "ai_estimate" as const,
     wordstat_top: [],
+    segments: [],
   };
+
+  // Нормализация: segments может прийти как JSON-строка из PostgreSQL
+  const segments = Array.isArray(safeData.segments)
+    ? safeData.segments
+    : typeof safeData.segments === 'string'
+      ? (JSON.parse(safeData.segments) as { title: string; share: number; pain: string; gain: string; check: string }[])
+      : [];
 
   const demandBadge = safeData.demand_source === "wordstat" 
     ? <Chip tone="mint">Wordstat · реальные данные</Chip> 
@@ -329,9 +339,13 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
       <div className="grid gap-4 xl:grid-cols-5">
         <Reveal className="xl:col-span-3">
           <Panel className="h-full p-5">
-            <Head kicker="Целевая аудитория" title="4 сегмента — кому продаём" right={<Chip tone="sky">по данным распаковки + Wordstat</Chip>} />
+            <Head kicker="Целевая аудитория" title="4 сегмента — кому продаём" right={<Chip tone="sky">{segments.length > 0 ? `ИИ-анализ: ${segments.length} сегмент${segments.length === 1 ? '' : segments.length < 5 ? 'а' : 'ов'}` : 'по данным распаковки'}</Chip>} />
             <div className="grid gap-3 sm:grid-cols-2">
-              {SEGMENTS.map((s, i) => (
+             {segments.length === 0 ? (
+                <div className="col-span-2 rounded-lg border border-dashed border-line p-6 text-center text-[12px] text-dim">
+                  Сегменты ЦА определятся после ИИ-анализа ниши
+                </div>
+              ) : segments.map((s, i) => (
                 <div key={s.title} className={`rounded-lg border p-4 transition-all duration-300 hover:-translate-y-0.5 ${i === 0 ? "border-amber/30 bg-amber/[0.04]" : "border-line bg-panel2/40 hover:border-line2"}`}>
                   <div className="flex items-center justify-between">
                     <div className="text-[13.5px] font-bold text-ink">{s.title}</div>
