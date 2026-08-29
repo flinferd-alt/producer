@@ -43,7 +43,7 @@ try {
     if ($m === 'GET') {
         $n = $db->prepare(
             'SELECT id, score, niche_name, verdict, demand, demand_growth, avg_check, margin, cpc,
-                    demand_source, competitors_source, source_payload, segments, search_checked_at, created_at
+                    demand_source, competitors_source, source_payload, segments, swot, search_checked_at, created_at
              FROM niche_snapshots WHERE launch_id = ? ORDER BY id DESC LIMIT 1'
         );
         $n->execute([$id]);
@@ -129,6 +129,7 @@ try {
         $cpc         = 0;
         $competitors = [];
         $segments    = [];
+        $swot        = [];
 
         $briefText = extractBriefText($db, $id);
 
@@ -150,6 +151,7 @@ try {
                 $cpc         = (int) ($parsed['cpc'] ?? 0);
                 $competitors = (array) ($parsed['competitors'] ?? []);
                 $segments    = (array) ($parsed['segments'] ?? []);
+                $swot        = (array) ($parsed['swot'] ?? []);
             } else {
                 $sourcePayload['gpt_parse_error'] = json_last_error_msg();
             }
@@ -167,16 +169,25 @@ try {
                 'INSERT INTO niche_snapshots
                     (launch_id, score, niche_name, verdict, demand, demand_growth,
                      avg_check, margin, cpc, demand_source, competitors_source,
-                     source_payload, segments, search_checked_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, now())
+                     source_payload, segments, swot, search_checked_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, now())
                  RETURNING id'
             );
             $st->execute([
-                $id, $score, $nicheName, $verdict,
-                $demand, $demandGrowth, $avgCheck, $margin, $cpc,
-                $demandSource, $competitorsSource,
+                $id,
+                $score,
+                $nicheName,
+                $verdict,
+                $demand,
+                $demandGrowth,
+                $avgCheck,
+                $margin,
+                $cpc,
+                $demandSource,
+                $competitorsSource,
                 json_encode($sourcePayload, JSON_UNESCAPED_UNICODE),
                 json_encode($segments, JSON_UNESCAPED_UNICODE),
+                json_encode($swot, JSON_UNESCAPED_UNICODE),
             ]);
             $snapshotId = (int) $st->fetchColumn();
 
@@ -525,6 +536,28 @@ function buildNicheAnalysisPrompt(
         . '      "check": "Ориентир платежеспособности, например \\"до 25 000 ₽\\"",' . $nl
         . '    }' . $nl
         . '  ],' . $nl
+        . '  "swot": [' . $nl
+        . '    {' . $nl
+        . '      "title": "Сильные стороны",' . $nl
+        . '      "tone": "mint",' . $nl
+        . '      "items": ["факт 1", "факт 2", "факт 3"]' . $nl
+        . '    },' . $nl
+        . '    {' . $nl
+        . '      "title": "Слабые стороны",' . $nl
+        . '      "tone": "coral",' . $nl
+        . '      "items": ["факт 1", "факт 2", "факт 3"]' . $nl
+        . '    },' . $nl
+        . '    {' . $nl
+        . '      "title": "Возможности",' . $nl
+        . '      "tone": "sky",' . $nl
+        . '      "items": ["факт 1", "факт 2", "факт 3"]' . $nl
+        . '    },' . $nl
+        . '    {' . $nl
+        . '      "title": "Угрозы",' . $nl
+        . '      "tone": "amber",' . $nl
+        . '      "items": ["факт 1", "факт 2", "факт 3"]' . $nl
+        . '    }' . $nl
+        . '  ],' . $nl
         . '  "competitors": [' . $nl
         . '    {' . $nl
         . '      "name": "Название школы/курса из сниппетов поиска",' . $nl
@@ -540,6 +573,8 @@ function buildNicheAnalysisPrompt(
         . '- demand (спрос) НЕ придумывай — он уже посчитан из Wordstat и сохранён отдельно.' . $nl
         . '- score НЕ придумывай — он рассчитается по формуле отдельно.' . $nl
         . '- Сегментов ЦА верни от 1 до 4: столько, сколько реально имеет смысл в этой нише.' . $nl
+        . '- SWOT заполняй на основе реальных данных: брифа эксперта, Wordstat и сниппетов конкурентов.' . $nl
+        . '- Каждый пункт SWOT — конкретный факт, а не общая фраза. По 2-4 пункта на квадрант.' . $nl
         . '- Если ниша узкая — верни 1-2 сегмента, если широкая — до 4. Не выдумывай лишние.' . $nl
         . '- Если в сниппетах нет данных о числе учеников или чеке конкурента — ставь 0.' . $nl
         . '- Конкурентов определяй ТОЛЬКО на основе найденных сниппетов, не выдумывай несуществующие школы.' . $nl

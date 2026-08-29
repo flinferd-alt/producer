@@ -33,6 +33,7 @@ interface NicheData {
   competitors_source: "search" | "ai_estimate";
   wordstat_top: WordstatKeyword[];
   segments: { title: string; share: number; pain: string; gain: string; check: string }[];
+  swot: { title: string; tone: string; items: string[] }[];
   search_checked_at?: string;
   created_at?: string;
 }
@@ -63,6 +64,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
         competitors_source: "ai_estimate",
         wordstat_top: [],
         segments: SEGMENTS,
+        swot: SWOT,
       });
       return;
     }
@@ -177,6 +179,7 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     competitors_source: "ai_estimate" as const,
     wordstat_top: [],
     segments: [],
+    swot: [],
   };
 
   // Нормализация: segments может прийти как JSON-строка из PostgreSQL
@@ -184,6 +187,12 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     ? safeData.segments
     : typeof safeData.segments === 'string'
       ? (JSON.parse(safeData.segments) as { title: string; share: number; pain: string; gain: string; check: string }[])
+      : [];
+
+  const swotData = Array.isArray(safeData.swot)
+    ? safeData.swot
+    : typeof safeData.swot === 'string'
+      ? (JSON.parse(safeData.swot) as { title: string; tone: string; items: string[] }[])
       : [];
 
   const demandBadge = safeData.demand_source === "wordstat" 
@@ -365,11 +374,11 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
 
         <Reveal delay={110} className="xl:col-span-2">
           <Panel className="h-full p-5">
-            <Head kicker="SWOT" title="Позиция запуска" />
+            <Head kicker="SWOT" title="Позиция запуска" right={<Chip tone={swotData.length > 0 ? "mint" : "sky"}>{swotData.length > 0 ? "на основе данных" : "демо"}</Chip>} />
             <div className="grid grid-cols-2 gap-3">
-              {SWOT.map((s) => (
+              {(swotData.length > 0 ? swotData : SWOT).map((s) => (
                 <div key={s.title} className="rounded-lg border border-line bg-deep/50 p-3.5">
-                  <div className={`font-mono text-[10px] tracking-[0.16em] uppercase ${TONE_TEXT[s.tone]}`}>{s.title}</div>
+                  <div className={`font-mono text-[10px] tracking-[0.16em] uppercase ${TONE_TEXT[s.tone as Tone] ?? ''}`}>{s.title}</div>
                   <ul className="mt-2 space-y-1.5">
                     {s.items.map((it) => (
                       <li key={it} className="flex items-start gap-1.5 text-[11.5px] leading-snug text-mut">
