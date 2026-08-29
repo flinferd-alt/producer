@@ -49,7 +49,7 @@ export default function App() {
 
 function AppInner() {
   const { session, live, isOwner } = useAuth();
-  const { launches, activeLaunchId, setActiveLaunchId } = useStore();
+  const { launches, activeLaunchId, setActiveLaunchId, isNicheAccepted } = useStore();
 
   const [section, setSection] = useState("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -69,11 +69,17 @@ function AppInner() {
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
   }, []);
 
+  const BLOCKED_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel", "ads", "payments", "stats"];
+
   const go = useCallback((id: string) => {
+    if (live && !isNicheAccepted && BLOCKED_SECTIONS.includes(id)) {
+      push("Сначала примите стратегию ниши", "amber");
+      return;
+    }
     setSection(id);
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  }, [live, isNicheAccepted, push]);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {
@@ -131,6 +137,7 @@ function AppInner() {
                       {n.label}
                       {n.id === "cabinet" && !live && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход"><Icon name="lock" size={11} className="text-amber/60" /></span>}
                       {n.id === "master" && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Только владелец"><Icon name="crown" size={11} className="text-mint/70" /></span>}
+                      {live && !isNicheAccepted && BLOCKED_SECTIONS.includes(n.id) && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Сначала примите стратегию ниши"><Icon name="lock" size={11} className="text-coral/60" /></span>}
                       {active && <span className={`${n.id === "cabinet" || n.id === "master" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                     </button>
                   );
@@ -230,6 +237,15 @@ function AppInner() {
               </button>
             </div>
           </div>
+
+          {!live && (
+            <div className="flex items-center justify-center gap-2.5 border-b border-amber/30 bg-amber/10 px-4 py-2">
+              <Icon name="eye" size={16} className="text-amber" />
+              <span className="font-display text-sm font-bold tracking-wide text-amber">ДЕМО-РЕЖИМ</span>
+              <span className="text-[12px] text-amber/80">— данные не сохраняются, войдите для работы с реальными запусками</span>
+              <button onClick={() => go("cabinet")} className="ml-2 cursor-pointer rounded-md border border-amber/40 bg-amber/15 px-2.5 py-0.5 font-mono text-[11px] font-bold tracking-wide text-amber transition-all hover:bg-amber/25">ВОЙТИ →</button>
+            </div>
+          )}
 
           <div className="ticker relative overflow-hidden border-t border-line/60 bg-deep2/60">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-deep to-transparent" />

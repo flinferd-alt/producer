@@ -1,9 +1,9 @@
 <?php
 
 /**
- * launches_detail.php — GET /api/launches/{id}
- * Возвращает запуск целиком: карточка + бриф (с ответами) + срез ниши
- * (с конкурентами) + план (этапы воронки и тарифы).
+ * launches_detail.php — GET / PATCH /api/launches/{id}
+ * GET  — возвращает запуск целиком: карточка + бриф + срез ниши + план.
+ * PATCH — обновляет stage запуска (принятие стратегии и т.д.).
  */
 
 declare(strict_types=1);
@@ -12,9 +12,37 @@ require __DIR__ . '/auth_helper.php';
 
 cors();
 authenticate();
-method('GET');
+$m = method('GET', 'PATCH');
 
 $id = launchId();
+
+/* ---------------- PATCH: обновление stage ---------------- */
+if ($m === 'PATCH') {
+    $in = input();
+    $stage = trim((string)($in['stage'] ?? ''));
+    if ($stage === '') {
+        fail('Поле stage обязательно', 400);
+    }
+
+    $allowedStages = ['unpacking', 'niche', 'niche_accepted', 'product', 'funnel', 'traffic', 'sales', 'active'];
+    if (!in_array($stage, $allowedStages, true)) {
+        fail('Недопустимое значение stage: ' . $stage, 400);
+    }
+
+    $stmt = db()->prepare('UPDATE launches SET stage = ? WHERE id = ?');
+    $stmt->execute([$stage, $id]);
+
+    // Возвращаем обновлённый запуск
+    $row = db()->prepare('SELECT id, name, expert, stage, status, config, created_at FROM launches WHERE id = ?');
+    $row->execute([$id]);
+    $launch = $row->fetch();
+    if ($launch === false) {
+        fail('Запуск не найден', 404);
+    }
+    json_out($launch);
+}
+
+/* ---------------- GET: полный запуск ---------------- */
 
 $stmt = db()->prepare(
     'SELECT id, name, expert, stage, status, config, created_at FROM launches WHERE id = ?'

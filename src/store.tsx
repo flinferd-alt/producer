@@ -61,6 +61,17 @@ const EMPTY_REAL: RealData = {
   funnel: [], traffic: 0, price: 0, budget: 0, ads: [], txs: [], kpis: [], integrations: [], dbConns: [], tokens: [], checklist: [],
 };
 
+export interface NicheContext {
+  niche_name: string;
+  score: number;
+  verdict: string;
+  segments: { title: string; share: number; pain: string; gain: string; check: string }[];
+  competitors: { name: string; weak: string; power: number }[];
+  avg_check: number;
+  margin: number;
+  demand: number;
+}
+
 interface StoreValue {
   real: RealData;
   loaded: boolean;
@@ -72,6 +83,11 @@ interface StoreValue {
   activeLaunchId: number | null;
   setActiveLaunchId: (id: number | null) => void;
   refreshLaunches: () => Promise<void>;
+
+  /* --- Ниша: принятие стратегии --- */
+  nicheContext: NicheContext | null;
+  setNicheContext: (ctx: NicheContext | null) => void;
+  isNicheAccepted: boolean;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -92,9 +108,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [launches, setLaunches] = useState<LaunchRow[]>([]);
   const [activeLaunchId, setActiveLaunchId] = useState<number | null>(null);
+  const [nicheContext, setNicheContext] = useState<NicheContext | null>(null);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  const isNicheAccepted = useMemo(() => {
+    const launch = launches.find((l) => l.id === activeLaunchId);
+    if (!launch) return false;
+    const stage = launch.stage || "";
+    return stage === "niche_accepted" || stage === "product" || stage === "funnel" || stage === "traffic" || stage === "sales";
+  }, [launches, activeLaunchId]);
+
+  // Сбрасываем nicheContext при смене запуска
+  useEffect(() => {
+    setNicheContext(null);
+  }, [activeLaunchId]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -150,6 +179,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setReal(EMPTY_REAL);
     setLaunches([]);
     setActiveLaunchId(null);
+    setNicheContext(null);
     setLoaded(false);
   }, []);
 
@@ -161,7 +191,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", login, logout }), [session, login, logout]);
-  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches }), [real, loaded, set, refreshData, launches, activeLaunchId, refreshLaunches]);
+  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isNicheAccepted }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isNicheAccepted]);
 
   return (
     <AuthCtx.Provider value={auth}>

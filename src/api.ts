@@ -95,7 +95,7 @@ async function tryRefresh(): Promise<boolean> {
 /* ---------------- универсальный fetch ---------------- */
 
 interface ApiOpts {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   /** не пытаться обновлять токен при 401 (для самих auth-эндпоинтов) */
   noRetry?: boolean;

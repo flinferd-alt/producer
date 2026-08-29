@@ -25,8 +25,8 @@ try {
 
     cors();
 
-    // Разрешаем только GET и POST
-    $m = method('GET', 'POST');
+        // Разрешаем GET, POST и PATCH
+    $m = method('GET', 'POST', 'PATCH');
 
     // Проверяем авторизацию. Если токена нет, скрипт отдаст 401 и сам завершится.
     $who = authenticate();

@@ -39,11 +39,17 @@ interface NicheData {
 }
 
 export default function Niche({ push }: { push: (t: string, tone?: Tone) => void }) {
-  const { activeLaunchId } = useStore();
+  const { activeLaunchId, refreshLaunches, setNicheContext, isNicheAccepted } = useStore();
   const { live } = useAuth();
 
   const [mode, setMode] = useState<"loading" | "empty" | "generating" | "data">("loading");
-  const [data, setData] = useState<NicheData | null>(null);
+const [data, setData] = useState<NicheData | null>(null);
+  const [strategyAccepted, setStrategyAccepted] = useState(isNicheAccepted);
+
+  // Синхронизируем состояние кнопки при смене запуска
+  useEffect(() => {
+    setStrategyAccepted(isNicheAccepted);
+  }, [isNicheAccepted]);
 
     // Загрузка данных при смене запуска
   useEffect(() => {
@@ -112,6 +118,38 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
     } catch (e) {
       push(e instanceof ApiError ? e.message : "Не удалось сгенерировать анализ", "coral");
       setMode("empty");
+    }
+  };
+
+  // Принятие стратегии: обновляем stage запуска
+  const acceptStrategy = async () => {
+    if (!live || !activeLaunchId) return;
+    try {
+      await apiFetch(`/launches/${activeLaunchId}`, {
+        method: "PATCH",
+        body: { stage: "niche_accepted" },
+      });
+      setStrategyAccepted(true);
+      if (data) {
+        setNicheContext({
+          niche_name: data.niche_name,
+          score: data.score,
+          verdict: data.verdict,
+          segments: Array.isArray(data.segments)
+            ? data.segments
+            : typeof data.segments === "string"
+              ? JSON.parse(data.segments)
+              : [],
+          competitors: data.competitors.map(c => ({ name: c.name, weak: c.weak, power: c.power })),
+          avg_check: data.avg_check,
+          margin: data.margin,
+          demand: data.demand,
+        });
+      }
+      refreshLaunches();
+      push("Стратегия принята — можно переходить к программе курса", "mint");
+    } catch (e) {
+      push(e instanceof ApiError ? e.message : "Не удалось обновить статус", "coral");
     }
   };
 
@@ -237,9 +275,11 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Спрос · показов/мес</div>
               <div className="flex items-center gap-2">
-                <Chip tone={safeData.demand_growth > 0 ? "mint" : "coral"}>
-                  {safeData.demand_growth > 0 ? "+" : ""}{safeData.demand_growth}%
-                </Chip>
+                {safeData.demand_growth !== 0 && (
+                  <Chip tone={safeData.demand_growth > 0 ? "mint" : "coral"}>
+                    {safeData.demand_growth > 0 ? "+" : ""}{safeData.demand_growth}%
+                  </Chip>
+                )}
                 {demandBadge}
               </div>
             </div>
@@ -406,8 +446,12 @@ export default function Niche({ push }: { push: (t: string, tone?: Tone) => void
             </div>
           </div>
           <p className="mt-3.5 max-w-4xl text-[13.5px] leading-relaxed text-ink/90">{safeData.verdict}</p>
-          <div className="mt-4 flex flex-wrap gap-2.5">
-            <ToneBtn tone="mint" onClick={() => push("Вывод принят — оркестратор обновил стратегию запуска", "mint")}>Принять стратегию</ToneBtn>
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            {strategyAccepted ? (
+              <Chip tone="mint"><Icon name="check" size={14} /> Стратегия принята</Chip>
+            ) : (
+              <ToneBtn tone="mint" onClick={acceptStrategy}><Icon name="check" size={16} /> Принять стратегию</ToneBtn>
+            )}
             <ToneBtn tone="ghost" onClick={generateNiche}>Сгенерировать другой вариант</ToneBtn>
           </div>
         </Panel>
