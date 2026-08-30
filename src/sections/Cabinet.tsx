@@ -12,11 +12,11 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
     const [loginStr, setLoginStr] = useState("");
     const [pass, setPass] = useState("");
     const [name, setName] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [err, setErr] = useState("");
-  const [tries, setTries] = useState(0);
-  const [checking, setChecking] = useState(false);
-  const [shake, setShake] = useState(false);
+    const [showPass, setShowPass] = useState(false);
+    const [err, setErr] = useState("");
+    const [tries, setTries] = useState(0);
+    const [checking, setChecking] = useState(false);
+    const [shake, setShake] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,6 +198,16 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
 
   useEffect(() => { refreshProfile(); }, [refreshProfile]);
 
+  // Load payment history
+  useEffect(() => {
+    api.getPayments().then((data) => {
+      setPaymentHistory(data.payments || []);
+      if (data.subscription) {
+        setSubInfo({ cancel_at: data.subscription.cancel_at, expires_at: data.subscription.expires_at });
+      }
+    }).catch(() => {});
+  }, []);
+
   // Берем данные запусков из глобального хранилища
   const { real, set, launches, refreshLaunches, activeLaunchId, setActiveLaunchId } = useStore();
 
@@ -209,6 +219,22 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
 
   /* оплата тарифа */
   const [paying, setPaying] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState<Array<{id:number;yookassa_id:string;tariff:string;amount:string;currency:string;status:string;description:string;paid_at:string|null;refunded_at:string|null;created_at:string}>>([]);
+  const [subInfo, setSubInfo] = useState<{cancel_at:string|null;expires_at:string|null}>({cancel_at:null,expires_at:null});
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const handleCancelSub = async () => {
+    setCancelLoading(true);
+    try {
+      await api.cancelSubscription();
+      push('Подписка будет отменена по истечении оплаченного периода', 'amber');
+      setSubInfo((prev) => ({ ...prev, cancel_at: prev.expires_at }));
+    } catch (e) {
+      push(e instanceof ApiError ? e.message : 'Ошибка отмены подписки', 'coral');
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
   const handlePay = async () => {
     setPaying(true);
     try {
@@ -307,12 +333,28 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
             {subscription === "pro" ? "4 900 ₽/мес" : subscription === "studio" ? "по договорённости" : isFreeLimitReached ? "лимит исчерпан" : "1 запуск бесплатно"}
           </Chip>
           {subscription === "free" && (
-            <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
-                          <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оформить тариф"} «Про»
-            </ToneBtn>
-          )}
-        </Panel>
-      </Reveal>
+                      <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
+                        <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оформить тариф"} «Про»
+                      </ToneBtn>
+                    )}
+                    {(subscription === "pro" || subscription === "studio") && (
+                      <div className="flex flex-wrap items-center gap-3">
+                        {subInfo.cancel_at ? (
+                          <Chip tone="amber">Отменена с {new Date(subInfo.cancel_at).toLocaleDateString("ru-RU")}</Chip>
+                        ) : (
+                          <ToneBtn tone="ghost" onClick={handleCancelSub} disabled={cancelLoading}>
+                            {cancelLoading ? "Отмена…" : "Отменить подписку"}
+                          </ToneBtn>
+                        )}
+                        {subInfo.expires_at && (
+                          <span className="text-sm text-dim">
+                            Действует до {new Date(subInfo.expires_at).toLocaleDateString("ru-RU")}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </Panel>
+                </Reveal>
 
       {/* мастер-панель */}
       {isOwner ? (
@@ -344,7 +386,44 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
       )}
 
       <div className="grid gap-4 xl:grid-cols-3">
-        {/* профиль */}
+        {/* История платежей */}
+                <Reveal className="xl:col-span-3">
+                  <Panel className="p-5">
+                    <Head kicker="YooKassa · таблица payments" title="История платежей" />
+                    {paymentHistory.length === 0 ? (
+                      <div className="mt-3 text-[12px] text-dim">Платежей пока нет</div>
+                    ) : (
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-left text-[12px]">
+                          <thead>
+                            <tr className="border-b border-line font-mono text-[10px] tracking-wider text-dim uppercase">
+                              <th className="pb-2 pr-4">Тариф</th>
+                              <th className="pb-2 pr-4">Сумма</th>
+                              <th className="pb-2 pr-4">Дата</th>
+                              <th className="pb-2">Статус</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paymentHistory.map((p, i) => (
+                              <tr key={i} className="border-b border-line/50">
+                                <td className="py-2.5 pr-4 text-ink">{p.tariff || p.description || '—'}</td>
+                                <td className="py-2.5 pr-4 text-ink">{p.amount ? `${p.amount} ₽` : '—'}</td>
+                                <td className="py-2.5 pr-4 text-mut">{p.created_at ? new Date(p.created_at).toLocaleDateString('ru-RU') : '—'}</td>
+                                <td className="py-2.5">
+                                  <Chip tone={p.status === 'succeeded' ? 'mint' : p.status === 'canceled' ? 'mut' : p.status === 'refunded' ? 'coral' : 'amber'}>
+                                    {p.status === 'succeeded' ? 'Оплачен' : p.status === 'canceled' ? 'Отменён' : p.status === 'refunded' ? 'Возврат' : p.status}
+                                  </Chip>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </Panel>
+                </Reveal>
+
+                  {/* Профиль */}
         <Reveal>
           <Panel className="relative h-full overflow-hidden p-5">
             <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-sky/10 blur-3xl" />

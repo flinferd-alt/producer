@@ -24,7 +24,7 @@ export interface StoredUser {
   login: string;
   role: "user" | "owner";
   name: string;
-  subscription_status: "free" | "pro" | "studio";
+  subscription_status: "free" | "trial" | "pro" | "studio";
   subscription_expires_at?: string | null;
   free_launches_used: number;
 }
@@ -201,6 +201,33 @@ export const api = {
 
   savePlan: (id: number, payload: Record<string, unknown>) =>
     apiFetch<{ saved: boolean }>(`/launches/${id}/plan`, { method: "POST", body: payload }),
+
+  /** Получить текущую подписку и историю платежей. */
+  getPayments: () =>
+    apiFetch<{
+      subscription: {
+        status: string;
+        expires_at: string | null;
+        cancel_at: string | null;
+        free_launches_used: number;
+      };
+      payments: Array<{
+        id: number;
+        yookassa_id: string;
+        tariff: string;
+        amount: string;
+        currency: string;
+        status: string;
+        description: string;
+        paid_at: string | null;
+        refunded_at: string | null;
+        created_at: string;
+      }>;
+    }>("/payments"),
+
+  /** Запланировать отмену подписки (deactivation по истечении периода). */
+  cancelSubscription: () =>
+    apiFetch<{ canceled: boolean; note: string }>("/payments", { method: "DELETE" }),
 
   /** Создать платёж в YooKassa. Возвращает confirmation_url для редиректа. */
   createPayment: (tariff: "pro" | "studio") =>

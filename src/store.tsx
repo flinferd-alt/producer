@@ -23,7 +23,7 @@ interface AuthValue {
   session: Session;
   live: boolean;
   isOwner: boolean;
-  subscription: "free" | "pro" | "studio";
+  subscription: "free" | "trial" | "pro" | "studio";
   freeLaunchesUsed: number;
   isFreeLimitReached: boolean;
   login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
@@ -108,7 +108,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return { role: user.role === "owner" ? "owner" : "user", login: user.login, name: user.name, id: user.id };
   });
 
-  const [subscription, setSubscription] = useState<"free" | "pro" | "studio">(() => {
+  const [subscription, setSubscription] = useState<"free" | "trial" | "pro" | "studio">(() => {
     const user = getStoredUser();
     return (user?.subscription_status as "free" | "pro" | "studio") ?? "free";
   });
@@ -116,7 +116,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const user = getStoredUser();
     return user?.free_launches_used ?? 0;
   });
-  const isFreeLimitReached = subscription === "free" && freeLaunchesUsed >= 1;
+  const isFreeLimitReached = (subscription === "free") && freeLaunchesUsed >= 1;
 
   const [real, setReal] = useState<RealData>(EMPTY_REAL);
   const [loaded, setLoaded] = useState(false);

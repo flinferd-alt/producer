@@ -55,8 +55,10 @@ function AppInner() {
   /* Разделы, заблокированные для free-пользователей (paywall) */
   const [section, setSection] = useState("welcome");
 
-  const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel"];
+  const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel", "ads", "payments", "stats"];
   const isPaywallHit = live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(section);
+  // Агенты: просмотр свободный, управление — Pro (передаём флаг в секцию)
+  const isAgentsLocked = live && subscription === "free" && isFreeLimitReached;
   const [menuOpen, setMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [launchIdx, setLaunchIdx] = useState(0); // Для демо-режима
@@ -319,12 +321,12 @@ function AppInner() {
               <div hidden={section !== "leadmagnet"}><LeadMagnetSection push={push} /></div>
               <div hidden={section !== "tripwire"}><TripwireSection push={push} /></div>
               <div hidden={section !== "funnel"}><Funnel push={push} /></div>
+              <div hidden={section !== "ads"}><AdsSection push={push} /></div>
+              <div hidden={section !== "payments"}><PaymentsSection push={push} /></div>
+              <div hidden={section !== "stats"}><StatsSection /></div>
             </>
           )}
-          <div hidden={section !== "ads"}><AdsSection push={push} /></div>
-          <div hidden={section !== "payments"}><PaymentsSection push={push} /></div>
-          <div hidden={section !== "stats"}><StatsSection /></div>
-          <div hidden={section !== "agents"}><AgentsSection push={push} /></div>
+          <div hidden={section !== "agents"}><AgentsSection push={push} locked={isAgentsLocked} /></div>
           <div hidden={section !== "concept"}><Concept push={push} /></div>
           <div hidden={section !== "cabinet"}><Cabinet push={push} go={go} /></div>
           <div hidden={section !== "master"}><Master push={push} /></div>

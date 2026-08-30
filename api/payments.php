@@ -1,9 +1,16 @@
 <?php
 
 /**
- * payments.php — создание платежа в YooKassa.
- * POST /api/payments { tariff: "pro"|"studio" }
- * → { confirmation_url, payment_id }
+ * payments.php — платежи YooKassa и управление подпиской.
+ *
+ * POST   /api/payments { tariff: "pro"|"studio" }
+ *   → { confirmation_url, payment_id }
+ *
+ * GET    /api/payments
+ *   → { subscription, payments: [...] }  — текущая подписка + история платежей
+ *
+ * DELETE /api/payments
+ *   → { canceled: true }  — запланировать отмену подписки (deactivation)
  */
 
 declare(strict_types=1);
@@ -26,9 +33,53 @@ try {
     require_once __DIR__ . '/auth_helper.php';
 
     cors();
-    $m = method('POST');
+    $m = method('GET', 'POST', 'DELETE');
     $who = authenticate();
 
+    /* ───────────── GET: подписка + история платежей ───────────── */
+    if ($m === 'GET') {
+        $stmt = db()->prepare(
+            'SELECT subscription_status, subscription_expires_at,
+                    free_launches_used, subscription_cancel_at
+             FROM users WHERE id = ?'
+        );
+        $stmt->execute([$who['user_id']]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $stmt = db()->prepare(
+            'SELECT id, yookassa_id, tariff, amount, currency, status,
+                    description, paid_at, refunded_at, created_at
+             FROM payments
+             WHERE user_id = ?
+             ORDER BY created_at DESC
+             LIMIT 50'
+        );
+        $stmt->execute([$who['user_id']]);
+        $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        json_out([
+            'subscription' => [
+                'status'     => $user['subscription_status'] ?? 'free',
+                'expires_at' => $user['subscription_expires_at'] ?? null,
+                'cancel_at'  => $user['subscription_cancel_at'] ?? null,
+                'free_launches_used' => (int) ($user['free_launches_used'] ?? 0),
+            ],
+            'payments' => $payments,
+        ]);
+    }
+
+    /* ───────────── DELETE: запланировать отмену подписки ───────────── */
+    if ($m === 'DELETE') {
+        db()->prepare(
+            'UPDATE users
+             SET subscription_cancel_at = subscription_expires_at
+             WHERE id = ?'
+        )->execute([$who['user_id']]);
+
+        json_out(['canceled' => true, 'note' => 'Подписка будет отменена по истечении оплаченного периода']);
+    }
+
+    /* ───────────── POST: создание платежа в YooKassa ───────────── */
     $in = input();
     $tariff = trim((string)($in['tariff'] ?? ''));
 
@@ -74,6 +125,7 @@ try {
             'return_url' => (string) env('YOOKASSA_RETURN_URL', 'https://producer-ai.ru/?paid=1'),
         ],
         'description' => $desc,
+        'save_payment_method' => true, // Разрешаем сохранение способа оплаты для рекуррентных списаний
         'metadata' => [
             'user_id'  => (string) $who['user_id'],
             'login'    => $who['login'] ?? '',

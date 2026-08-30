@@ -141,7 +141,7 @@ export function StatsSection() {
 }
 
 /* ================= АГЕНТЫ ================= */
-export function AgentsSection({ push }: { push: (t: string, tone?: Tone) => void }) {
+export function AgentsSection({ push, locked = false }: { push: (t: string, tone?: Tone) => void; locked?: boolean }) {
   const [statuses, setStatuses] = useState<Record<string, string>>(() => Object.fromEntries(AGENTS.map((a) => [a.id, a.status])));
   const [openLog, setOpenLog] = useState<string | null>("orch");
 
@@ -189,9 +189,10 @@ export function AgentsSection({ push }: { push: (t: string, tone?: Tone) => void
                 <div className="mt-3.5 flex items-center justify-between">
                   <span className="font-mono text-[10.5px] text-mut">{a.tasks} задач</span>
                   <div className="flex gap-1.5">
-                    <button onClick={() => setOpenLog(openLog === a.id ? null : a.id)} className={`cursor-pointer rounded-md border px-2 py-1 font-mono text-[10px] uppercase transition-colors ${openLog === a.id ? "border-sky/50 text-sky" : "border-line text-dim hover:text-ink"}`}>лог</button>
+                    <button onClick={() => { if (locked) { push("Управление агентами — тариф Про", "amber"); return; } setOpenLog(openLog === a.id ? null : a.id); }} className={`cursor-pointer rounded-md border px-2 py-1 font-mono text-[10px] uppercase transition-colors ${openLog === a.id ? "border-sky/50 text-sky" : "border-line text-dim hover:text-ink"}`}>лог</button>
                     <button
                       onClick={() => {
+                        if (locked) { push("Управление агентами — тариф Про", "amber"); return; }
                         const next = active ? "пауза" : "в работе";
                         setStatuses((s) => ({ ...s, [a.id]: next }));
                         push(`Агент «${a.name}»: ${next === "пауза" ? "приостановлен" : "возвращён в работу"}`, next === "пауза" ? "coral" : "mint");
