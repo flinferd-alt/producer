@@ -168,7 +168,7 @@ function statusTone(status: string): Tone {
 }
 
 function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go: (id: string) => void }) {
-  const { session, isOwner, logout } = useAuth();
+  const { session, isOwner, logout, subscription, isFreeLimitReached } = useAuth();
 
   // Берем данные запусков из глобального хранилища
   const { real, set, launches, refreshLaunches, activeLaunchId, setActiveLaunchId } = useStore();
@@ -240,6 +240,35 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
           >
             <Icon name="logout" size={14} /> Выйти
           </button>
+        </Panel>
+      </Reveal>
+
+      {/* статус подписки */}
+      <Reveal>
+        <Panel className={`flex flex-wrap items-center gap-4 p-5 ${subscription === "pro" ? "border-mint/30" : subscription === "studio" ? "border-sky/30" : isFreeLimitReached ? "border-coral/30" : "border-amber/30"}`}>
+          <span className={`grid h-11 w-11 place-items-center rounded-xl ${subscription === "pro" ? "bg-mint/12 text-mint" : subscription === "studio" ? "bg-sky/12 text-sky" : "bg-amber/12 text-amber"}`}>
+            <Icon name={subscription === "free" ? "spark" : "crown"} size={21} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[15px] font-extrabold text-ink">
+              {subscription === "pro" ? "Тариф «Про»" : subscription === "studio" ? "Тариф «Студия»" : "Бесплатный тариф"}
+            </div>
+            <div className="font-mono text-[10.5px] tracking-wider text-dim uppercase">
+              {subscription === "pro" || subscription === "studio"
+                ? "Неограниченные запуски, брифы и анализ ниши"
+                : isFreeLimitReached
+                  ? "Бесплатный запуск использован — оформите тариф"
+                  : "1 бесплатный запуск · далее — тариф «Про»"}
+            </div>
+          </div>
+          <Chip tone={subscription === "pro" ? "mint" : subscription === "studio" ? "sky" : isFreeLimitReached ? "coral" : "amber"}>
+            {subscription === "pro" ? "4 900 ₽/мес" : subscription === "studio" ? "по договорённости" : isFreeLimitReached ? "лимит исчерпан" : "1 запуск бесплатно"}
+          </Chip>
+          {subscription === "free" && (
+            <ToneBtn tone="amber" onClick={() => go("welcome")}>
+              <Icon name="spark" size={14} /> Оформить тариф «Про»
+            </ToneBtn>
+          )}
         </Panel>
       </Reveal>
 
@@ -318,9 +347,19 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
               right={<Chip tone="mint">В БД: {launches.length}</Chip>}
             />
 
-            {isOwner && (
-              <div className="mb-4">
-                {creating ? (
+            <div className="mb-4">
+              {isFreeLimitReached && !isOwner ? (
+                <div className="flex items-center gap-3 rounded-lg border border-coral/30 bg-coral/[0.06] p-4">
+                  <Icon name="lock" size={18} className="text-coral" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-bold text-coral">Бесплатный лимит исчерпан</div>
+                    <div className="text-[12px] text-mut">Оформите тариф «Про» для создания новых запусков</div>
+                  </div>
+                  <ToneBtn tone="amber" onClick={() => go("welcome")}>
+                    <Icon name="spark" size={14} /> Тариф «Про»
+                  </ToneBtn>
+                </div>
+              ) : creating ? (
                   <form onSubmit={createLaunch} className="flex flex-wrap items-center gap-2.5 rounded-lg border border-mint/30 bg-mint/[0.04] p-3">
                     <input
                       value={newName}
@@ -347,7 +386,6 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
                   </ToneBtn>
                 )}
               </div>
-            )}
 
             <div className="space-y-3">
               {launches.length === 0 ? (

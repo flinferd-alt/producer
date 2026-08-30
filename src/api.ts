@@ -24,6 +24,8 @@ export interface StoredUser {
   login: string;
   role: "user" | "owner";
   name: string;
+  subscription_status: "free" | "pro" | "studio";
+  free_launches_used: number;
 }
 
 export interface LaunchRow {

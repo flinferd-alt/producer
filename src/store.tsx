@@ -23,6 +23,9 @@ interface AuthValue {
   session: Session;
   live: boolean;
   isOwner: boolean;
+  subscription: "free" | "pro" | "studio";
+  freeLaunchesUsed: number;
+  isFreeLimitReached: boolean;
   login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
   logout: () => void;
 }
@@ -103,6 +106,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return { role: user.role === "owner" ? "owner" : "user", login: user.login, name: user.name, id: user.id };
   });
 
+  const [subscription, setSubscription] = useState<"free" | "pro" | "studio">(() => {
+    const user = getStoredUser();
+    return (user?.subscription_status as "free" | "pro" | "studio") ?? "free";
+  });
+  const [freeLaunchesUsed, setFreeLaunchesUsed] = useState(() => {
+    const user = getStoredUser();
+    return user?.free_launches_used ?? 0;
+  });
+  const isFreeLimitReached = subscription === "free" && freeLaunchesUsed >= 1;
+
   const [real, setReal] = useState<RealData>(EMPTY_REAL);
   const [loaded, setLoaded] = useState(false);
 
@@ -165,6 +178,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const { user } = await api.login(loginStr, password);
       const role: Role = user.role === "owner" ? "owner" : "user";
       setSession({ role, login: user.login, name: user.name, id: user.id });
+      setSubscription(user.subscription_status || "free");
+      setFreeLaunchesUsed(user.free_launches_used ?? 0);
       await refreshData();
       await refreshLaunches();
       return { ok: true as const, role };
@@ -176,6 +191,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     void api.logout();
     clearAuth();
     setSession(GUEST);
+    setSubscription("free");
+    setFreeLaunchesUsed(0);
     setReal(EMPTY_REAL);
     setLaunches([]);
     setActiveLaunchId(null);
@@ -190,7 +207,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", login, logout }), [session, login, logout]);
+  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, logout }), [session, login, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
   const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isNicheAccepted }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isNicheAccepted]);
 
   return (

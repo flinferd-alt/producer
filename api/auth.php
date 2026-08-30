@@ -37,7 +37,7 @@ if ((int) $cnt->fetchColumn() >= 5) {
 }
 
 /* --- поиск пользователя и проверка пароля --- */
-$stmt = db()->prepare('SELECT id, login, password_hash, role FROM users WHERE lower(login) = ? LIMIT 1');
+$stmt = db()->prepare('SELECT id, login, password_hash, role, subscription_status, free_launches_used FROM users WHERE lower(login) = ? LIMIT 1');
 $stmt->execute([$login]);
 $user = $stmt->fetch();
 
@@ -56,10 +56,11 @@ $tokens = issueTokens((int) $user['id'], (string) $user['login'], (string) $user
 
 json_out($tokens + [
     'user' => [
-        'id'    => (int) $user['id'],
-        'login' => (string) $user['login'],
-        'role'  => (string) $user['role'],
-        // имя для UI: логин с заглавной буквы (фронтенд ждёт отображаемое имя)
-        'name'  => mb_strtoupper(mb_substr($user['login'], 0, 1)) . mb_substr($user['login'], 1),
+        'id'                  => (int) $user['id'],
+        'login'               => (string) $user['login'],
+        'role'                => (string) $user['role'],
+        'name'                => mb_strtoupper(mb_substr($user['login'], 0, 1)) . mb_substr($user['login'], 1),
+        'subscription_status' => (string) ($user['subscription_status'] ?? 'free'),
+        'free_launches_used'  => (int) ($user['free_launches_used'] ?? 0),
     ],
 ]);

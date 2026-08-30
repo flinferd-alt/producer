@@ -373,7 +373,7 @@ export function fmt(n: number) {
   return Math.round(n).toLocaleString("ru-RU");
 }
 
-export function ToneBtn({ children, onClick, tone = "amber", className = "", disabled = false }: { children: ReactNode; onClick?: () => void; tone?: "amber" | "ghost" | "mint" | "coral"; className?: string; disabled?: boolean }) {
+export function ToneBtn({ children, onClick, tone = "amber", className = "", disabled = false, type = "button" }: { children: ReactNode; onClick?: () => void; tone?: "amber" | "ghost" | "mint" | "coral"; className?: string; disabled?: boolean; type?: "button" | "submit" | "reset" }) {
   const map = {
     amber: "bg-amber text-deep hover:brightness-110 shadow-[0_8px_24px_-10px_rgba(255,178,36,0.7)]",
     mint: "bg-mint text-deep hover:brightness-110 shadow-[0_8px_24px_-10px_rgba(61,220,151,0.6)]",
@@ -382,6 +382,7 @@ export function ToneBtn({ children, onClick, tone = "amber", className = "", dis
   };
   return (
     <button
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 font-mono text-[12px] font-semibold tracking-wide uppercase transition-all duration-300 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 ${map[tone]} ${className}`}
@@ -403,6 +404,39 @@ export function Head({ kicker, title, right }: { kicker: string; title: string; 
         <h2 className="font-display text-xl font-bold tracking-tight text-ink sm:text-2xl">{title}</h2>
       </div>
       {right}
+    </div>
+  );
+}
+
+/** Paywall-заглушка для free-пользователей — показывает тариф «Про». */
+export function PaywallNote({ title, go }: { title: string; go: (id: string) => void }) {
+  return (
+    <div className="panel relative overflow-hidden p-8">
+      <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-amber/10 blur-3xl" />
+      <div className="flex flex-col items-center gap-5 text-center">
+        <span className="grid h-16 w-16 place-items-center rounded-2xl border border-amber/30 bg-amber/10 text-amber">
+          <Icon name="crown" size={28} />
+        </span>
+        <div>
+          <div className="font-display text-xl font-extrabold text-ink">{title}</div>
+          <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-mut">
+            Оформите тариф «Про» — 4 900 ₽/мес, чтобы получить программу курса, тарифы, воронку продаж и экспорт стратегии.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <ToneBtn tone="amber" onClick={() => go("welcome")}>
+            <Icon name="spark" size={14} /> Оформить тариф «Про»
+          </ToneBtn>
+          <Chip tone="amber">14 дней бесплатно</Chip>
+        </div>
+        <ul className="mt-2 space-y-1.5 text-left text-[12px] leading-snug text-mut">
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Программа курса сгенерирована ИИ</li>
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> 3 тарифа курса под вашу нишу</li>
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Воронка продаж с юнит-экономикой</li>
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Неограниченные запуски и брифы</li>
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Экспорт стратегии в PDF</li>
+        </ul>
+      </div>
     </div>
   );
 }

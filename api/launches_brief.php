@@ -56,6 +56,21 @@ try {
 
     /* --- POST: сохранение брифа --- */
     if ($m === 'POST') {
+        // Freemium: платные пользователи могут перезапускать бриф, бесплатные — нет (если уже есть бриф)
+        $existingBrief = $db->prepare('SELECT id FROM briefs WHERE launch_id = ? LIMIT 1');
+        $existingBrief->execute([$id]);
+        $hasBrief = $existingBrief->fetch(PDO::FETCH_ASSOC) !== false;
+
+        if ($hasBrief) {
+            $who = authenticate();
+            $sub = $db->prepare('SELECT subscription_status FROM users WHERE id = ?');
+            $sub->execute([$who['user_id']]);
+            $subStatus = $sub->fetchColumn();
+            if ($subStatus === 'free') {
+                fail('Перезапуск брифа доступен на тарифе «Про». Оформите подписку для неограниченных попыток.', 402);
+            }
+        }
+
         $in      = input();
         $answers = $in['answers'] ?? null;
 

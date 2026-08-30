@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LAUNCHES, NAV, TICKER, type Tone } from "./data";
-import { Chip, Dot, Icon, ToneBtn, useScramble } from "./ui";
+import { Chip, Dot, Icon, LockedNote, PaywallNote, ToneBtn, useScramble } from "./ui";
 import { DataProvider, useAuth, useStore } from "./store";
 import Dashboard from "./sections/Dashboard";
 import Unpack from "./sections/Unpack";
@@ -12,6 +12,7 @@ import { AgentsSection, StatsSection } from "./sections/Insights";
 import Cabinet from "./sections/Cabinet";
 import Master from "./sections/Master";
 import Concept from "./sections/Concept";
+import Welcome from "./sections/Welcome";
 
 interface Toast {
   id: number;
@@ -48,10 +49,14 @@ export default function App() {
 }
 
 function AppInner() {
-  const { session, live, isOwner } = useAuth();
+  const { session, live, isOwner, subscription, isFreeLimitReached } = useAuth();
   const { launches, activeLaunchId, setActiveLaunchId, isNicheAccepted } = useStore();
 
-  const [section, setSection] = useState("dashboard");
+  /* Разделы, заблокированные для free-пользователей (paywall) */
+  const [section, setSection] = useState("welcome");
+
+  const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel"];
+  const isPaywallHit = live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(section);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [launchIdx, setLaunchIdx] = useState(0); // Для демо-режима
@@ -61,7 +66,8 @@ function AppInner() {
 
   useEffect(() => {
     if (!isOwner && section === "master") setSection("dashboard");
-  }, [isOwner, section]);
+    if (live && section === "welcome") setSection("dashboard");
+  }, [isOwner, live, section]);
 
   const push = useCallback((text: string, tone: Tone = "mint") => {
     const id = ++toastId.current;
@@ -76,10 +82,13 @@ function AppInner() {
       push("Сначала примите стратегию ниши", "amber");
       return;
     }
+  if (live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(id)) {
+        push("Раздел доступен на тарифе «Про»", "amber");
+      }
     setSection(id);
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [live, isNicheAccepted, push]);
+  }, [live, isNicheAccepted, subscription, isFreeLimitReached, push]);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {
@@ -105,6 +114,26 @@ function AppInner() {
   const launch = live
     ? uiLaunches.find((l) => l.id === activeLaunchId) || uiLaunches[0] || { id: -1, name: "Нет запусков", stage: "—", status: "создайте запуск", tone: "mut" as Tone }
     : uiLaunches[launchIdx];
+
+  const isWelcome = section === "welcome";
+
+  // Лендинг — полноэкранный, без сайдбара
+  if (isWelcome) {
+    return (
+      <div className="relative min-h-screen text-ink">
+        <div className="ambient-grid pointer-events-none fixed inset-0 z-0" />
+        <div className="ambient-glow pointer-events-none fixed inset-0 z-0" />
+        <div className="noise pointer-events-none fixed inset-0 z-[1]" />
+        <Welcome onTry={() => {
+          if (live) {
+            setSection("dashboard");
+          } else {
+            setSection("cabinet");
+          }
+        }} />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen text-ink">
@@ -138,6 +167,7 @@ function AppInner() {
                       {n.id === "cabinet" && !live && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход"><Icon name="lock" size={11} className="text-amber/60" /></span>}
                       {n.id === "master" && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Только владелец"><Icon name="crown" size={11} className="text-mint/70" /></span>}
                       {live && !isNicheAccepted && BLOCKED_SECTIONS.includes(n.id) && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Сначала примите стратегию ниши"><Icon name="lock" size={11} className="text-coral/60" /></span>}
+                      {live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(n.id) && isNicheAccepted && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Тариф «Про» — разблокирует раздел"><Icon name="crown" size={11} className="text-amber/70" /></span>}
                       {active && <span className={`${n.id === "cabinet" || n.id === "master" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                     </button>
                   );
@@ -264,10 +294,16 @@ function AppInner() {
           <div hidden={section !== "dashboard"}><Dashboard go={go} push={push} /></div>
           <div hidden={section !== "unpack"}><Unpack go={go} push={push} /></div>
           <div hidden={section !== "niche"}><Niche push={push} /></div>
-          <div hidden={section !== "product"}><ProductSection push={push} /></div>
-          <div hidden={section !== "leadmagnet"}><LeadMagnetSection push={push} /></div>
-          <div hidden={section !== "tripwire"}><TripwireSection push={push} /></div>
-          <div hidden={section !== "funnel"}><Funnel push={push} /></div>
+          {isPaywallHit ? (
+            <PaywallNote title={current.label} go={go} />
+          ) : (
+            <>
+              <div hidden={section !== "product"}><ProductSection push={push} /></div>
+              <div hidden={section !== "leadmagnet"}><LeadMagnetSection push={push} /></div>
+              <div hidden={section !== "tripwire"}><TripwireSection push={push} /></div>
+              <div hidden={section !== "funnel"}><Funnel push={push} /></div>
+            </>
+          )}
           <div hidden={section !== "ads"}><AdsSection push={push} /></div>
           <div hidden={section !== "payments"}><PaymentsSection push={push} /></div>
           <div hidden={section !== "stats"}><StatsSection /></div>

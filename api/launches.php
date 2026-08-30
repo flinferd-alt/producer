@@ -46,8 +46,24 @@ try {
         json_out($rows);
     }
 
-    if ($m === 'POST') {
+        if ($m === 'POST') {
         requireOwner($who);
+
+        // Freemium: проверяем лимит бесплатных запусков
+        $sub = db()->prepare('SELECT subscription_status, free_launches_used FROM users WHERE id = ?');
+        $sub->execute([$who['user_id']]);
+        $userInfo = $sub->fetch(PDO::FETCH_ASSOC);
+        $subStatus = $userInfo['subscription_status'] ?? 'free';
+        $freeUsed  = (int) ($userInfo['free_launches_used'] ?? 0);
+
+        if ($subStatus === 'free' && $freeUsed >= 1) {
+            fail('Бесплатный лимит исчерпан. Оформите тариф «Про» для создания новых запусков.', 402);
+        }
+
+        // Увеличиваем счётчик бесплатных запусков
+        if ($subStatus === 'free') {
+            db()->prepare('UPDATE users SET free_launches_used = free_launches_used + 1 WHERE id = ?')->execute([$who['user_id']]);
+        }
 
         $in = input();
         $name = trim((string)($in['name'] ?? ''));

@@ -73,6 +73,21 @@ try {
     /* ==================== POST ==================== */
     if ($m === 'POST') {
 
+        // Freemium: перезапуск анализа ниши — только для платных
+        $existingNiche = $db->prepare('SELECT id FROM niche_snapshots WHERE launch_id = ? LIMIT 1');
+        $existingNiche->execute([$id]);
+        $hasNiche = $existingNiche->fetch(PDO::FETCH_ASSOC) !== false;
+
+        if ($hasNiche) {
+            $who2 = authenticate();
+            $sub2 = $db->prepare('SELECT subscription_status FROM users WHERE id = ?');
+            $sub2->execute([$who2['user_id']]);
+            $subStatus2 = $sub2->fetchColumn();
+            if ($subStatus2 === 'free') {
+                fail('Перезапуск анализа ниши доступен на тарифе «Про». Оформите подписку для неограниченных попыток.', 402);
+            }
+        }
+
         // 1. Извлекаем ключевую фразу ниши из брифа
         $nichePhrase = extractNichePhrase($db, $id);
 
