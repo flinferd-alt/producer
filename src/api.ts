@@ -187,4 +187,11 @@ export const api = {
 
   savePlan: (id: number, payload: Record<string, unknown>) =>
     apiFetch<{ saved: boolean }>(`/launches/${id}/plan`, { method: "POST", body: payload }),
+
+  /** Создать платёж в YooKassa. Возвращает confirmation_url для редиректа. */
+  createPayment: (tariff: "pro" | "studio") =>
+    apiFetch<{ confirmation_url: string; payment_id: string | null }>(
+      "/payments",
+      { method: "POST", body: { tariff } },
+    ),
 };

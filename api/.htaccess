@@ -8,7 +8,10 @@ RewriteRule ^launches/([0-9]+)/niche/?$ launches_niche.php?id=$1 [L,QSA]
 RewriteRule ^launches/([0-9]+)/plan/?$ launches_plan.php?id=$1 [L,QSA]
 RewriteRule ^launches/([0-9]+)/?$ launches_detail.php?id=$1 [L,QSA]
 
-# 2. Стандартные запросы
+# 2. Вебхук YooKassa (без .php расширения в URL)
+RewriteRule ^webhooks/yookassa/?$ webhooks/yookassa.php [L]
+
+# 3. Стандартные запросы
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.php -f

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { CONTACTS, PRICING, type Tone } from "../data";
+import { CONTACTS, LEGAL, PRICING, type Tone } from "../data";
 import { Bar, Chip, Icon, ToneBtn } from "../ui";
+import { api } from "../api";
 
 const STEPS = [
   { icon: "chat", title: "Распаковка", text: "10 вопросов — и ИИ-продюсер знает нишу, аудиторию и цель лучше, чем вы сами" },
@@ -19,10 +20,32 @@ const NUMBERS = [
 
 export default function Welcome({ onTry }: { onTry: () => void }) {
   const [emailSent, setEmailSent] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState("");
 
   const handleEmail = (e: React.FormEvent) => {
     e.preventDefault();
     setEmailSent(true);
+  };
+
+  const handlePay = async (tariff: "pro" | "studio") => {
+    if (!agreed) {
+      setPayError("Подтвердите согласие с офертой");
+      return;
+    }
+    setPaying(true);
+    setPayError("");
+    try {
+      const res = await api.createPayment(tariff);
+      if (res.confirmation_url) {
+        window.location.href = res.confirmation_url;
+      }
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Ошибка создания платежа");
+    } finally {
+      setPaying(false);
+    }
   };
 
   return (
@@ -125,7 +148,13 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
                     ))}
                   </ul>
                   <div className="mt-5">
-                    <ToneBtn tone={p.tone === "sky" ? "ghost" : p.tone === "mint" ? "mint" : "amber"} onClick={onTry} className="w-full justify-center">
+                    {p.id !== "starter" && (
+                      <label className="mb-3 flex cursor-pointer items-start gap-2 text-[11px] leading-tight text-dim">
+                        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-amber" />
+                        <span>Принимаю <a href={LEGAL.offerUrl} target="_blank" className="text-amber hover:underline">условия оферты</a> и <a href={LEGAL.privacyUrl} target="_blank" className="text-amber hover:underline">политику конфиденциальности</a></span>
+                      </label>
+                    )}
+                    <ToneBtn tone={p.tone === "sky" ? "ghost" : p.tone === "mint" ? "mint" : "amber"} onClick={() => { if (p.id === "pro") handlePay("pro"); else if (p.id === "studio") handlePay("studio"); else onTry(); }} disabled={paying && p.id !== "starter"} className="w-full justify-center">
                       {p.cta}
                     </ToneBtn>
                   </div>
@@ -133,6 +162,11 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
               );
             })}
           </div>
+          {payError && (
+            <div className="mx-auto mt-4 max-w-md rounded-lg border border-coral/30 bg-coral/5 px-4 py-2.5 text-center text-[12px] text-coral">
+              {payError}
+            </div>
+          )}
         </div>
       </section>
 
@@ -163,8 +197,9 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-line bg-deep2/50 px-4 py-8 sm:px-6">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-4 sm:flex-row sm:justify-between">
+      <footer className="border-t border-line bg-deep2/50 px-4 py-8 sm:px-6" id="footer">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
           <div className="flex items-center gap-2">
             <div className="grid h-8 w-8 place-items-center rounded-lg border border-amber/30 bg-amber/10">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -186,6 +221,29 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
           </div>
           <div className="font-mono text-[11px] text-dim">
             © {new Date().getFullYear()} ПРОДЮСЕР.AI
+          </div>
+        </div>
+
+          <div className="border-t border-line/60 pt-5">
+            <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
+              <div className="font-mono text-[11px] text-dim">
+                {LEGAL.fullName} · {LEGAL.status} · ИНН {LEGAL.inn}
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-mono text-[11px]">
+                <a href={LEGAL.offerUrl} className="text-mut hover:text-amber transition-colors">Оферта</a>
+                <a href={LEGAL.privacyUrl} className="text-mut hover:text-amber transition-colors">Политика конфиденциальности</a>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col items-center gap-2 text-center sm:flex-row sm:justify-between sm:text-left">
+              <div className="flex items-center gap-3 font-mono text-[11px] text-dim">
+                <a href={`mailto:${LEGAL.email}`} className="hover:text-ink transition-colors">{LEGAL.email}</a>
+                <span className="text-line2">·</span>
+                <a href={LEGAL.telegram} target="_blank" rel="noopener" className="hover:text-ink transition-colors">Telegram</a>
+              </div>
+              <div className="font-mono text-[11px] text-dim">
+                {LEGAL.deliveryNote}
+              </div>
+            </div>
           </div>
         </div>
       </footer>

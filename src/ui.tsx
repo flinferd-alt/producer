@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Tone } from "./data";
+import { LEGAL, type Tone } from "./data";
+import { api } from "./api";
 
 /* ---------------- hooks ---------------- */
 export function useReducedMotion() {
@@ -410,6 +411,21 @@ export function Head({ kicker, title, right }: { kicker: string; title: string; 
 
 /** Paywall-заглушка для free-пользователей — показывает тариф «Про». */
 export function PaywallNote({ title, go }: { title: string; go: (id: string) => void }) {
+  const [agreed, setAgreed] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [err, setErr] = useState("");
+
+  const handlePay = async () => {
+    if (!agreed) { setErr("Подтвердите согласие с офертой"); return; }
+    setPaying(true); setErr("");
+    try {
+      const res = await api.createPayment("pro");
+      if (res.confirmation_url) window.location.href = res.confirmation_url;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка оплаты");
+    } finally { setPaying(false); }
+  };
+
   return (
     <div className="panel relative overflow-hidden p-8">
       <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-amber/10 blur-3xl" />
@@ -423,11 +439,18 @@ export function PaywallNote({ title, go }: { title: string; go: (id: string) => 
             Оформите тариф «Про» — 4 900 ₽/мес, чтобы получить программу курса, тарифы, воронку продаж и экспорт стратегии.
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <ToneBtn tone="amber" onClick={() => go("welcome")}>
-            <Icon name="spark" size={14} /> Оформить тариф «Про»
-          </ToneBtn>
-          <Chip tone="amber">14 дней бесплатно</Chip>
+        <div className="flex flex-col items-center gap-3">
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-tight text-dim">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-amber" />
+            <span>Принимаю <a href={LEGAL.offerUrl} target="_blank" className="text-amber hover:underline">оферту</a> и <a href={LEGAL.privacyUrl} target="_blank" className="text-amber hover:underline">политику</a></span>
+          </label>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
+              <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оплатить 4 900 ₽"}
+            </ToneBtn>
+            <Chip tone="amber">14 дней бесплатно</Chip>
+          </div>
+          {err && <div className="text-[11px] text-coral">{err}</div>}
         </div>
         <ul className="mt-2 space-y-1.5 text-left text-[12px] leading-snug text-mut">
           <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Программа курса сгенерирована ИИ</li>
