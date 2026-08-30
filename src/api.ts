@@ -156,6 +156,16 @@ export const api = {
     return data;
   },
 
+  /** Регистрация. Возвращает access_token + пользователя; сохраняет их локально. */
+  async register(login: string, password: string, name?: string): Promise<{ access_token: string; user: StoredUser }> {
+    const data = await apiFetch<{ access_token: string; user: StoredUser }>(
+      "/auth/register",
+      { method: "POST", body: { login, password, name }, noRetry: true },
+    );
+    saveAuth(data.access_token, data.user);
+    return data;
+  },
+
   /** Выход: отзыв refresh-токена на сервере. */
   logout(): Promise<unknown> {
     return apiFetch("/auth/logout", { method: "POST", noRetry: true }).catch(() => undefined);

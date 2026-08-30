@@ -27,6 +27,7 @@ interface AuthValue {
   freeLaunchesUsed: number;
   isFreeLimitReached: boolean;
   login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
+  register: (login: string, password: string, name?: string) => Promise<{ ok: true; role: Role }>;
   logout: () => void;
 }
 
@@ -173,6 +174,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshData, refreshLaunches]);
 
+  const register = useCallback(
+    async (loginStr: string, password: string, name?: string) => {
+      const { user } = await api.register(loginStr, password, name);
+      const role: Role = user.role === "owner" ? "owner" : "user";
+      setSession({ role, login: user.login, name: user.name, id: user.id });
+      setSubscription(user.subscription_status || "free");
+      setFreeLaunchesUsed(user.free_launches_used ?? 0);
+      await refreshData();
+      await refreshLaunches();
+      return { ok: true as const, role };
+    },
+    [refreshData, refreshLaunches],
+  );
+
   const login = useCallback(
     async (loginStr: string, password: string) => {
       const { user } = await api.login(loginStr, password);
@@ -207,7 +222,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, logout }), [session, login, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
+  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, logout }), [session, login, register, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
   const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isNicheAccepted }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isNicheAccepted]);
 
   return (

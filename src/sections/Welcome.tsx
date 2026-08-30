@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CONTACTS, LEGAL, PRICING, type Tone } from "../data";
 import { Bar, Chip, Icon, ToneBtn } from "../ui";
-import { api } from "../api";
+import { api, getToken } from "../api";
 
 const STEPS = [
   { icon: "chat", title: "Распаковка", text: "10 вопросов — и ИИ-продюсер знает нишу, аудиторию и цель лучше, чем вы сами" },
@@ -30,6 +30,10 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
   };
 
   const handlePay = async (tariff: "pro" | "studio") => {
+    if (!getToken()) {
+      onTry(); // перейти к входу в кабинет
+      return;
+    }
     if (!agreed) {
       setPayError("Подтвердите согласие с офертой");
       return;
@@ -227,7 +231,7 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
           <div className="border-t border-line/60 pt-5">
             <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:justify-between sm:text-left">
               <div className="font-mono text-[11px] text-dim">
-                {LEGAL.fullName} · {LEGAL.status} · ИНН {LEGAL.inn}
+                {LEGAL.fullName} · ИНН {LEGAL.inn}
               </div>
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-mono text-[11px]">
                 <a href={LEGAL.offerUrl} className="text-mut hover:text-amber transition-colors">Оферта</a>

@@ -7,9 +7,11 @@ import { Bar, Chip, Dot, Head, Icon, Panel, Reveal, ToneBtn } from "../ui";
 /* ================= ЭКРАН ВХОДА (гость) ================= */
 
 function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
-  const { login } = useAuth();
-  const [loginStr, setLoginStr] = useState("");
-  const [pass, setPass] = useState("");
+  const { login, register } = useAuth();
+    const [mode, setMode] = useState<"login" | "register">("login");
+    const [loginStr, setLoginStr] = useState("");
+    const [pass, setPass] = useState("");
+    const [name, setName] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [err, setErr] = useState("");
   const [tries, setTries] = useState(0);
@@ -22,14 +24,19 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
     setChecking(true);
     setErr("");
     try {
-      const r = await login(loginStr, pass);
+      if (mode === "register") {
+        const r = await register(loginStr, pass, name || undefined);
+        push("Аккаунт создан!", "mint");
+      } else {
+        const r = await login(loginStr, pass);
       push(
         r.role === "owner"
           ? "Вход владельца: реальные данные из PostgreSQL + мастер-панель"
           : "Добро пожаловать! Загружены реальные данные",
         "mint",
       );
-    } catch (error) {
+            }
+          } catch (error) {
       const n = tries + 1;
       setTries(n);
       setShake(true);
@@ -37,7 +44,8 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
       setPass("");
       if (error instanceof ApiError) {
         if (error.status === 401) setErr("Неверный логин или пароль.");
-        else if (error.status === 429) setErr(error.message);
+                else if (error.status === 409) setErr("Этот логин уже занят.");
+                else if (error.status === 429) setErr(error.message);
         else setErr(`Сервер вернул ошибку ${error.status}: ${error.message}`);
       } else {
         setErr("Не удалось связаться с сервером авторизации. Проверьте соединение и попробуйте ещё раз.");
@@ -55,22 +63,33 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
           <div className="pointer-events-none absolute -left-14 -top-14 h-44 w-44 rounded-full bg-amber/10 blur-3xl" />
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 place-items-center rounded-xl border border-amber/30 bg-amber/10 text-amber">
-              <Icon name="lock" size={20} />
+              <Icon name={mode === "register" ? "user" : "lock"} size={20} />
             </span>
             <div>
-              <div className="font-display text-lg font-extrabold text-ink">Вход в кабинет</div>
+              <div className="font-display text-lg font-extrabold text-ink">{mode === "register" ? "Регистрация" : "Вход в кабинет"}</div>
               <div className="font-mono text-[10.5px] tracking-wider text-dim uppercase">JWT · bcrypt · PostgreSQL</div>
             </div>
           </div>
 
-          <form onSubmit={submit} className="mt-6 space-y-4">
+          <div className="mt-5 flex rounded-lg border border-line bg-deep/50 p-1">
+            <button type="button" onClick={() => { setMode("login"); setErr(""); }} className={`flex-1 rounded-md py-2 font-mono text-[11px] font-semibold tracking-wide uppercase transition-all ${mode === "login" ? "bg-amber text-deep" : "text-mut hover:text-ink"}`}>Вход</button>
+            <button type="button" onClick={() => { setMode("register"); setErr(""); }} className={`flex-1 rounded-md py-2 font-mono text-[11px] font-semibold tracking-wide uppercase transition-all ${mode === "register" ? "bg-amber text-deep" : "text-mut hover:text-ink"}`}>Регистрация</button>
+          </div>
+
+          <form onSubmit={submit} className="mt-5 space-y-4">
             <div>
-              <label className="mb-1.5 block font-mono text-[10.5px] tracking-[0.16em] text-dim uppercase">Логин</label>
+              {mode === "register" && (
+              <div>
+                <label className="mb-1.5 block font-mono text-[10.5px] tracking-[0.16em] text-dim uppercase">Имя</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="Как вас называть" className="w-full rounded-lg border border-line bg-deep/70 px-4 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-dim focus:border-amber/50" />
+              </div>
+            )}
+            <label className="mb-1.5 block font-mono text-[10.5px] tracking-[0.16em] text-dim uppercase">Логин</label>
               <input
                 value={loginStr}
                 onChange={(e) => setLoginStr(e.target.value)}
                 autoComplete="username"
-                placeholder="Ваш логин"
+                placeholder={mode === "register" ? "Минимум 3 символа" : "Ваш логин"}
                 className="w-full rounded-lg border border-line bg-deep/70 px-4 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-dim focus:border-amber/50"
               />
             </div>
@@ -81,8 +100,8 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
                   value={pass}
                   onChange={(e) => setPass(e.target.value)}
                   type={showPass ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="••••••••••••"
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                                    placeholder={mode === "register" ? "Минимум 6 символов" : "••••••••••••"}
                   className="w-full rounded-lg border border-line bg-deep/70 px-4 py-3 pr-12 text-[14px] text-ink outline-none transition-colors placeholder:text-dim focus:border-amber/50"
                 />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-dim transition-colors hover:text-ink" aria-label="Показать пароль">
@@ -100,7 +119,7 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
 
             <button
               type="submit"
-              disabled={checking || !loginStr || !pass}
+              disabled={checking || !loginStr || !pass || (mode === "register" && loginStr.length < 3) || (mode === "register" && pass.length < 6)}
               className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg bg-amber py-3.5 font-mono text-[12px] font-bold tracking-[0.14em] text-deep uppercase transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {checking ? (
@@ -108,11 +127,11 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
                   <span className="typing-dot h-1.5 w-1.5 rounded-full bg-deep" />
                   <span className="typing-dot h-1.5 w-1.5 rounded-full bg-deep" />
                   <span className="typing-dot h-1.5 w-1.5 rounded-full bg-deep" />
-                  проверяем
+                  {mode === "register" ? "создаём" : "проверяем"}
                 </>
               ) : (
                 <>
-                  <Icon name="unlock" size={16} /> Войти
+                  <Icon name={mode === "register" ? "spark" : "unlock"} size={16} /> {mode === "register" ? "Создать аккаунт" : "Войти"}
                 </>
               )}
             </button>
@@ -120,14 +139,21 @@ function LoginGate({ push }: { push: (t: string, tone?: Tone) => void }) {
 
           <div className="mt-6 rounded-lg border border-sky/25 bg-sky/[0.05] p-4">
             <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.18em] text-sky uppercase">
-              <Icon name="shield" size={13} /> как устроена проверка
+              <Icon name="shield" size={13} /> {mode === "register" ? "о регистрации" : "как устроена проверка"}
             </div>
             <ul className="mt-2 space-y-1.5 text-[11.5px] leading-snug text-mut">
-              <li className="flex gap-2"><span className="text-sky">▸</span> Пароль проверяется на сервере, в коде клиента его нет.</li>
-              <li className="flex gap-2"><span className="text-sky">▸</span> Access-токен живёт 15 минут, refresh — 30 дней.</li>
-              <li className="flex gap-2"><span className="text-sky">▸</span> 5 неудачных попыток блокируют вход.</li>
+              <li className="flex gap-2"><span className="text-sky">▸</span> Пароль хранится в bcrypt-хэше, даже мы его не видим.</li>
+                            <li className="flex gap-2"><span className="text-sky">▸</span> Access-токен живёт 15 минут, refresh — 30 дней.</li>
+                            {mode === "register" ? (
+                              <>
+                                <li className="flex gap-2"><span className="text-sky">▸</span> Бесплатный тариф: 1 запуск, 1 бриф, 1 анализ ниши.</li>
+                                <li className="flex gap-2"><span className="text-sky">▸</span> Тариф «Про» — неограниченные запуски и ИИ-агенты.</li>
+                              </>
+                            ) : (
+                              <li className="flex gap-2"><span className="text-sky">▸</span> 5 неудачных попыток блокируют вход.</li>
+                            )}
             </ul>
-            <p className="mt-2.5 text-[11.5px] leading-snug text-dim">Доступ выдаёт владелец сервиса.</p>
+                        {mode === "login" && <p className="mt-2.5 text-[11.5px] leading-snug text-dim">Доступ выдаёт владелец сервиса.</p>}
           </div>
         </Panel>
       </Reveal>

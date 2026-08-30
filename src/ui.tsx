@@ -448,7 +448,7 @@ export function PaywallNote({ title, go }: { title: string; go: (id: string) => 
             <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
               <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оплатить 4 900 ₽"}
             </ToneBtn>
-            <Chip tone="amber">14 дней бесплатно</Chip>
+            
           </div>
           {err && <div className="text-[11px] text-coral">{err}</div>}
         </div>
