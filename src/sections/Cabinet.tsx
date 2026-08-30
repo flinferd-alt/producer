@@ -194,7 +194,9 @@ function statusTone(status: string): Tone {
 }
 
 function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go: (id: string) => void }) {
-  const { session, isOwner, logout, subscription, isFreeLimitReached } = useAuth();
+  const { session, isOwner, logout, subscription, isFreeLimitReached, refreshProfile } = useAuth();
+
+  useEffect(() => { refreshProfile(); }, [refreshProfile]);
 
   // Берем данные запусков из глобального хранилища
   const { real, set, launches, refreshLaunches, activeLaunchId, setActiveLaunchId } = useStore();
@@ -204,6 +206,20 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
   const [newName, setNewName] = useState("");
   const [newExpert, setNewExpert] = useState("");
   const [saving, setSaving] = useState(false);
+
+  /* оплата тарифа */
+  const [paying, setPaying] = useState(false);
+  const handlePay = async () => {
+    setPaying(true);
+    try {
+      const res = await api.createPayment("pro");
+      if (res.confirmation_url) window.location.href = res.confirmation_url;
+    } catch (e) {
+      push(e instanceof ApiError ? e.message : "Ошибка создания платежа", "coral");
+    } finally {
+      setPaying(false);
+    }
+  };
 
   /* интеграции — из app_data */
   const [ints, setInts] = useState(real.integrations);
@@ -291,8 +307,8 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
             {subscription === "pro" ? "4 900 ₽/мес" : subscription === "studio" ? "по договорённости" : isFreeLimitReached ? "лимит исчерпан" : "1 запуск бесплатно"}
           </Chip>
           {subscription === "free" && (
-            <ToneBtn tone="amber" onClick={() => go("welcome")}>
-              <Icon name="spark" size={14} /> Оформить тариф «Про»
+            <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
+                          <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оформить тариф"} «Про»
             </ToneBtn>
           )}
         </Panel>
@@ -381,8 +397,8 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
                     <div className="text-[13px] font-bold text-coral">Бесплатный лимит исчерпан</div>
                     <div className="text-[12px] text-mut">Оформите тариф «Про» для создания новых запусков</div>
                   </div>
-                  <ToneBtn tone="amber" onClick={() => go("welcome")}>
-                    <Icon name="spark" size={14} /> Тариф «Про»
+                  <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
+                                      <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Тариф"} «Про»
                   </ToneBtn>
                 </div>
               ) : creating ? (

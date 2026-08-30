@@ -4,7 +4,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AdChannel, ApiToken, DbConn, FunnelStage, Kpi, Tx } from "./data";
-import { api, ApiError, clearAuth, getStoredUser, getToken, type StoredUser, type LaunchRow } from "./api";
+import { api, ApiError, clearAuth, getStoredUser, getToken, saveAuth, type StoredUser, type LaunchRow } from "./api";
 
 /* ---------------- сессия ---------------- */
 
@@ -28,6 +28,7 @@ interface AuthValue {
   isFreeLimitReached: boolean;
   login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
   register: (login: string, password: string, name?: string) => Promise<{ ok: true; role: Role }>;
+  refreshProfile: () => Promise<void>;
   logout: () => void;
 }
 
@@ -174,12 +175,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshData, refreshLaunches]);
 
+  const refreshProfile = useCallback(async () => {
+    try {
+      const user = await api.me();
+      saveAuth(getToken() || '', user);
+      setSubscription(user.subscription_status !== "free" && user.subscription_expires_at && new Date(user.subscription_expires_at) < new Date() ? "free" : user.subscription_status || "free");
+      setFreeLaunchesUsed(user.free_launches_used ?? 0);
+    } catch { /* ignore */ }
+  }, []);
+
   const register = useCallback(
     async (loginStr: string, password: string, name?: string) => {
       const { user } = await api.register(loginStr, password, name);
       const role: Role = user.role === "owner" ? "owner" : "user";
       setSession({ role, login: user.login, name: user.name, id: user.id });
-      setSubscription(user.subscription_status || "free");
+      setSubscription(user.subscription_status !== "free" && user.subscription_expires_at && new Date(user.subscription_expires_at) < new Date() ? "free" : user.subscription_status || "free");
       setFreeLaunchesUsed(user.free_launches_used ?? 0);
       await refreshData();
       await refreshLaunches();
@@ -193,7 +203,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const { user } = await api.login(loginStr, password);
       const role: Role = user.role === "owner" ? "owner" : "user";
       setSession({ role, login: user.login, name: user.name, id: user.id });
-      setSubscription(user.subscription_status || "free");
+      setSubscription(user.subscription_status !== "free" && user.subscription_expires_at && new Date(user.subscription_expires_at) < new Date() ? "free" : user.subscription_status || "free");
       setFreeLaunchesUsed(user.free_launches_used ?? 0);
       await refreshData();
       await refreshLaunches();
@@ -222,7 +232,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, logout }), [session, login, register, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
+  const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, refreshProfile, logout }), [session, login, register, refreshProfile, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
   const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isNicheAccepted }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isNicheAccepted]);
 
   return (

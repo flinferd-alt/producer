@@ -25,6 +25,7 @@ export interface StoredUser {
   role: "user" | "owner";
   name: string;
   subscription_status: "free" | "pro" | "studio";
+  subscription_expires_at?: string | null;
   free_launches_used: number;
 }
 
@@ -66,7 +67,7 @@ export function clearAuth(): void {
   }
 }
 
-function saveAuth(token: string, user: StoredUser): void {
+export function saveAuth(token: string, user: StoredUser): void {
   try {
     localStorage.setItem(LS_TOKEN, token);
     localStorage.setItem(LS_USER, JSON.stringify(user));
@@ -165,6 +166,9 @@ export const api = {
     saveAuth(data.access_token, data.user);
     return data;
   },
+
+  /** Актуальный профиль из БД (подписка, лимиты). */
+  me: () => apiFetch<StoredUser>("/auth/me"),
 
   /** Выход: отзыв refresh-токена на сервере. */
   logout(): Promise<unknown> {

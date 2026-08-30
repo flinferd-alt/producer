@@ -49,7 +49,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { session, live, isOwner, subscription, isFreeLimitReached } = useAuth();
+  const { session, live, isOwner, subscription, isFreeLimitReached, refreshProfile } = useAuth();
   const { launches, activeLaunchId, setActiveLaunchId, isNicheAccepted } = useStore();
 
   /* Разделы, заблокированные для free-пользователей (paywall) */
@@ -68,6 +68,23 @@ function AppInner() {
     if (!isOwner && section === "master") setSection("dashboard");
     if (live && section === "welcome") setSection("dashboard");
   }, [isOwner, live, section]);
+
+  // Обработка ?paid=1 — после оплаты YooKassa редиректит сюда
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("paid") === "1") {
+      params.delete("paid");
+      const clean = params.toString();
+      const next = clean ? `${window.location.pathname}?${clean}` : window.location.pathname;
+      window.history.replaceState({}, "", next);
+      refreshProfile().then(() => {
+        push("Подписка активирована — тариф «Про» подключён", "mint");
+      }).catch(() => {
+        push("Подписка активирована (обновите страницу, если изменения не видны)", "mint");
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const push = useCallback((text: string, tone: Tone = "mint") => {
     const id = ++toastId.current;

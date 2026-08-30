@@ -32,12 +32,13 @@ try {
     $who = authenticate();
 
     if ($m === 'GET') {
-        $db = db();
-        $stmt = $db->query(
-            'SELECT id, name, expert, stage, status, config, created_at
-             FROM launches ORDER BY created_at DESC'
-        );
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $db = db();
+            $stmt = $db->prepare(
+                'SELECT id, name, expert, stage, status, config, user_id, created_at
+                 FROM launches WHERE user_id = ? ORDER BY created_at DESC'
+            );
+            $stmt->execute([$who['user_id']]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Гарантируем, что отдаем массив
         if (!is_array($rows)) {
@@ -47,7 +48,6 @@ try {
     }
 
         if ($m === 'POST') {
-        requireOwner($who);
 
         // Freemium: проверяем лимит бесплатных запусков
         $sub = db()->prepare('SELECT subscription_status, free_launches_used FROM users WHERE id = ?');
@@ -75,11 +75,11 @@ try {
 
         $db = db();
         $stmt = $db->prepare(
-            "INSERT INTO launches (name, expert, stage, status, config)
-             VALUES (?, ?, 'unpacking', 'active', '{}'::jsonb)
+            "INSERT INTO launches (name, expert, stage, status, config, user_id)
+                         VALUES (?, ?, 'unpacking', 'active', '{}'::jsonb, ?)
              RETURNING id, name, expert, stage, status, config, created_at"
         );
-        $stmt->execute([$name, $expert]);
+        $stmt->execute([$name, $expert, $who['user_id']]);
 
         $launch = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$launch) {
