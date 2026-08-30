@@ -1,4 +1,7 @@
-<?php
+const fs = require('fs');
+const path = require('path');
+
+const content = `<?php
 // Отключаем стандартный HTML-вывод ошибок, чтобы не ломать JSON парсеру
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
@@ -89,7 +92,7 @@ try {
         $freeUsed  = (int) ($userInfo['free_launches_used'] ?? 0);
 
         if ($subStatus === 'free' && $freeUsed >= 1) {
-            fail('Бесплатный лимит исчерпан. Оформите тариф «Про» для создания новых запусков.', 402);
+            fail('Бесплатный лимит исчерпан. Оформите тариф \\xc2\\xabПро\\xc2\\xbb для создания новых запусков.', 402);
         }
 
         // Увеличиваем счётчик бесплатных запусков
@@ -141,3 +144,13 @@ try {
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
+`;
+
+// Заменяем экранированные кавычки-ёлочки на настоящие UTF-8
+const fixed = content
+  .replace(/\\xc2\\xab/g, '\u00AB')  // «
+  .replace(/\\xc2\\xbb/g, '\u00BB'); // »
+
+const outPath = path.join(__dirname, '..', 'api', 'launches.php');
+fs.writeFileSync(outPath, fixed, 'utf8');
+console.log('OK: api/launches.php обновлён');

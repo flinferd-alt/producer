@@ -415,9 +415,9 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
                       placeholder="Эксперт (необязательно)"
                       className="min-w-0 flex-1 rounded-lg border border-line bg-deep/70 px-3.5 py-2.5 text-[13px] text-ink outline-none transition-colors placeholder:text-dim focus:border-mint/50"
                     />
-                    <ToneBtn tone="mint" disabled={saving || !newName.trim()}>
-                      {saving ? "создаём…" : "создать"}
-                    </ToneBtn>
+                    <ToneBtn tone="mint" type="submit" disabled={saving || !newName.trim()}>
+                                          {saving ? "создаём…" : "создать"}
+                                        </ToneBtn>
                     <button type="button" onClick={() => setCreating(false)} className="cursor-pointer text-dim transition-colors hover:text-ink" aria-label="Отмена">
                       <Icon name="close" size={16} />
                     </button>
