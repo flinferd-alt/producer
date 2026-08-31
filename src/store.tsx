@@ -77,6 +77,19 @@ export interface NicheContext {
   demand: number;
 }
 
+export interface ProductContext {
+  niche_name: string;
+  positioning: string;
+  usp: string;
+  competitor_diff: string;
+  modules: { title: string; lessons: string[] }[];
+  tariffs: { name: string; price: number; hot?: boolean; note: string; features: string[] }[];
+  unit_economics: { cac: number; ltv: number; romi: number; break_even: number };
+  methodology: { format: string; frequency: string; feedback: string; certificate: string };
+  risks: { title: string; severity: "high" | "medium" | "low"; mitigation: string }[];
+  recommendations: string[];
+}
+
 interface StoreValue {
   real: RealData;
   loaded: boolean;
@@ -92,7 +105,12 @@ interface StoreValue {
   /* --- Ниша: принятие стратегии --- */
   nicheContext: NicheContext | null;
   setNicheContext: (ctx: NicheContext | null) => void;
+  isUnpackDone: boolean;
   isNicheAccepted: boolean;
+
+  /* --- Продукт: стратегия от ИИ --- */
+  productContext: ProductContext | null;
+  setProductContext: (ctx: ProductContext | null) => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -124,9 +142,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [launches, setLaunches] = useState<LaunchRow[]>([]);
   const [activeLaunchId, setActiveLaunchId] = useState<number | null>(null);
   const [nicheContext, setNicheContext] = useState<NicheContext | null>(null);
+  const [productContext, setProductContext] = useState<ProductContext | null>(null);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
+
+  const isUnpackDone = useMemo(() => {
+    const launch = launches.find((l) => l.id === activeLaunchId);
+    if (!launch) return false;
+    const stage = launch.stage || "";
+    return stage === "brief_saved" || stage === "niche_accepted" || stage === "product" || stage === "funnel" || stage === "traffic" || stage === "sales";
+  }, [launches, activeLaunchId]);
 
   const isNicheAccepted = useMemo(() => {
     const launch = launches.find((l) => l.id === activeLaunchId);
@@ -138,6 +164,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Сбрасываем nicheContext при смене запуска
   useEffect(() => {
     setNicheContext(null);
+    setProductContext(null);
   }, [activeLaunchId]);
 
   const refreshData = useCallback(async () => {
@@ -222,6 +249,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLaunches([]);
     setActiveLaunchId(null);
     setNicheContext(null);
+    setProductContext(null);
     setLoaded(false);
   }, []);
 
@@ -233,7 +261,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, refreshProfile, logout }), [session, login, register, refreshProfile, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
-  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isNicheAccepted }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isNicheAccepted]);
+  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext]);
 
   return (
     <AuthCtx.Provider value={auth}>

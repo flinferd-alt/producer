@@ -479,6 +479,60 @@ export function PaywallNote({ title, go }: { title: string; go: (id: string) => 
   );
 }
 
+/** Заглушка: раздел заблокирован до завершения распаковки и/или анализа ниши. */
+export function PrerequisiteNote({ title, go, isUnpackDone, isNicheAccepted }: { title: string; go: (id: string) => void; isUnpackDone: boolean; isNicheAccepted: boolean }) {
+  return (
+    <div className="panel relative overflow-hidden p-8">
+      <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-sky/10 blur-3xl" />
+      <div className="flex flex-col items-center gap-5 text-center">
+        <span className="grid h-16 w-16 place-items-center rounded-2xl border border-sky/30 bg-sky/10 text-sky">
+          <Icon name="layers" size={28} />
+        </span>
+        <div>
+          <div className="font-display text-xl font-extrabold text-ink">{title}</div>
+          <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-mut">
+            Для работы с этим разделом сначала завершите предыдущие шаги — данные понадобятся для генерации.
+          </p>
+        </div>
+
+        <div className="w-full max-w-md space-y-2.5">
+          <div className={`rounded-xl border px-4 py-3 ${isUnpackDone ? 'border-mint/20 bg-mint/5' : 'border-sky/25 bg-sky/5'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name={isUnpackDone ? 'check' : 'chat'} size={14} className={isUnpackDone ? 'text-mint' : 'text-sky'} />
+                <span className="text-[12px] font-semibold text-ink">Распаковка эксперта</span>
+              </div>
+              {isUnpackDone ? (
+                <Chip tone="mint">Готово</Chip>
+              ) : (
+                <ToneBtn tone="ghost" className="!px-2.5 !py-1 !text-[10px]" onClick={() => go("unpack")}>
+                  Пройти →
+                </ToneBtn>
+              )}
+            </div>
+          </div>
+
+          <div className={`rounded-xl border px-4 py-3 ${isNicheAccepted ? 'border-mint/20 bg-mint/5' : 'border-sky/25 bg-sky/5'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name={isNicheAccepted ? 'check' : 'target'} size={14} className={isNicheAccepted ? 'text-mint' : 'text-sky'} />
+                <span className="text-[12px] font-semibold text-ink">Анализ ниши</span>
+              </div>
+              {isNicheAccepted ? (
+                <Chip tone="mint">Готово</Chip>
+              ) : (
+                <ToneBtn tone="ghost" className="!px-2.5 !py-1 !text-[10px]" onClick={() => go("niche")}>
+                  {isUnpackDone ? 'Анализ →' : 'Сначала распаковка'}
+                </ToneBtn>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Заглушка для разделов с реальными данными, когда пользователь не вошёл. */
 export function LockedNote({
   title = "Раздел с реальными данными",

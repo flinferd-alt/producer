@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LAUNCHES, NAV, TICKER, type Tone } from "./data";
-import { Chip, Dot, Icon, LockedNote, PaywallNote, ToneBtn, useScramble } from "./ui";
+import { Chip, Dot, Icon, LockedNote, PaywallNote, PrerequisiteNote, ToneBtn, useScramble } from "./ui";
 import { DataProvider, useAuth, useStore } from "./store";
 import Dashboard from "./sections/Dashboard";
 import Unpack from "./sections/Unpack";
@@ -50,13 +50,15 @@ export default function App() {
 
 function AppInner() {
   const { session, live, isOwner, subscription, refreshProfile } = useAuth();
-  const { launches, activeLaunchId, setActiveLaunchId } = useStore();
+  const { launches, activeLaunchId, setActiveLaunchId, isUnpackDone, isNicheAccepted } = useStore();
 
   /* Разделы, заблокированные для free-пользователей (paywall) */
   const [section, setSection] = useState("welcome");
 
+  const PREREQUISITE_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel"];
   const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel"];
-  const isPaywallHit = live && subscription === "free" && PAYWALL_SECTIONS.includes(section);
+  const isPrerequisiteBlock = PREREQUISITE_SECTIONS.includes(section) && (!isUnpackDone || !isNicheAccepted);
+  const isPaywallHit = live && subscription === "free" && PAYWALL_SECTIONS.includes(section) && !isPrerequisiteBlock;
   // Агенты: просмотр свободный, управление — Pro (передаём флаг в секцию)
 
   const isAgentsLocked = live && subscription === "free";
@@ -98,7 +100,9 @@ function AppInner() {
 
 
   const go = useCallback((id: string) => {
-    if (live && subscription === "free" && PAYWALL_SECTIONS.includes(id)) {
+    if (PREREQUISITE_SECTIONS.includes(id) && (!isUnpackDone || !isNicheAccepted)) {
+      push("Сначала завершите распаковку и анализ ниши", "sky");
+    } else if (live && subscription === "free" && PAYWALL_SECTIONS.includes(id)) {
       push("Раздел доступен на тарифе «Про»", "amber");
     }
 
@@ -108,7 +112,7 @@ function AppInner() {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
 
-  }, [live, subscription, push]);
+  }, [live, subscription, isUnpackDone, isNicheAccepted, push]);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {
@@ -136,6 +140,31 @@ function AppInner() {
     : uiLaunches[launchIdx];
 
   const isWelcome = section === "welcome";
+// Динамический ticker: реальные данные для вошедших, нейтральные — для гостей
+  const tickerItems = useMemo(() => {
+    if (!live) return TICKER;
+    const items: string[] = [];
+    const activeLaunch = launches.find((l) => l.id === activeLaunchId);
+    if (activeLaunch) {
+      items.push("Запуск: " + activeLaunch.name);
+      const stage = activeLaunch.stage || "распаковка";
+      if (stage === "brief_saved") items.push("Распаковка завершена — бриф сохранён в БД");
+      else if (stage === "niche_accepted") items.push("Стратегия ниши принята — переходим к продукту");
+      else if (stage === "product" || stage === "funnel") items.push("Продукт и воронка в работе");
+      else items.push("Этап: распаковка — начните с диалога с ИИ");
+    } else {
+      items.push("Создайте запуск в кабинете, чтобы начать работу");
+    }
+    items.push(isUnpackDone ? "Распаковка пройдена ✓" : "Распаковка: 10 вопросов для сбора контекста");
+    items.push(isNicheAccepted ? "Анализ ниши пройден ✓" : "Анализ ниши: скоринг, сегменты, конкуренты");
+    items.push("Запусков: " + launches.length);
+    items.push("YandexGPT-5 · ru-central1 · синхронная генерация");
+    items.push("PostgreSQL 16 · Beget VDS · ежедневное резервное копирование");
+    items.push(subscription === "free" ? "Тариф «Старт» — обновите до «Про» для полного доступа" : "Тариф «Про» активен");
+    items.push("ЮKassa — платежи, рассрочка, чеки 54-ФЗ");
+    return items.length > 0 ? items : TICKER;
+  }, [live, launches, activeLaunchId, isUnpackDone, isNicheAccepted, subscription]);
+
 
   // Лендинг — полноэкранный, без сайдбара
   if (isWelcome) {
@@ -186,7 +215,11 @@ function AppInner() {
                       {n.label}
                       {n.id === "cabinet" && !live && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход"><Icon name="lock" size={11} className="text-amber/60" /></span>}
                       {n.id === "master" && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Только владелец"><Icon name="crown" size={11} className="text-mint/70" /></span>}
-                      {live && subscription === "free" && PAYWALL_SECTIONS.includes(n.id) && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Тариф «Про» — разблокирует раздел"><Icon name="crown" size={11} className="text-amber/70" /></span>}
+                      {PREREQUISITE_SECTIONS.includes(n.id) && (!isUnpackDone || !isNicheAccepted) ? (
+                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Сначала завершите распаковку и анализ ниши"><Icon name="layers" size={11} className="text-sky/70" /></span>
+                    ) : live && subscription === "free" && PAYWALL_SECTIONS.includes(n.id) ? (
+                      <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Тариф «Про» — разблокирует раздел"><Icon name="crown" size={11} className="text-amber/70" /></span>
+                    ) : null}
                       {active && <span className={`${n.id === "cabinet" || n.id === "master" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                     </button>
                   );
@@ -235,7 +268,7 @@ function AppInner() {
                   <Icon name="eye" size={12} /> ДЕМО-ДАННЫЕ
                 </button>
               )}
-              <Chip tone="amber" className="hidden md:inline-flex">Бюджет: 150 000 ₽</Chip>
+              <Chip tone="amber" className="hidden md:inline-flex">{launches.length > 0 ? "Запусков: " + launches.length : "Нет запусков"}</Chip>
 
               {/* Селектор запусков */}
               <div className="relative" ref={dropRef}>
@@ -300,7 +333,7 @@ function AppInner() {
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-deep to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-deep to-transparent" />
             <div className="ticker-track flex w-max items-center gap-8 py-1.5 pl-8">
-              {[...TICKER, ...TICKER].map((t, i) => (
+              {[...tickerItems, ...tickerItems].map((t, i) => (
                 <span key={i} className="flex items-center gap-2.5 font-mono text-[11px] whitespace-nowrap text-mut">
                   <span className={i % 3 === 0 ? "text-amber" : i % 3 === 1 ? "text-mint" : "text-sky"}>▸</span>{t}
                 </span>
@@ -313,7 +346,9 @@ function AppInner() {
           <div hidden={section !== "dashboard"}><Dashboard go={go} push={push} /></div>
           <div hidden={section !== "unpack"}><Unpack go={go} push={push} /></div>
           <div hidden={section !== "niche"}><Niche push={push} /></div>
-          {isPaywallHit ? (
+          {isPrerequisiteBlock ? (
+            <PrerequisiteNote title={current.label} go={go} isUnpackDone={isUnpackDone} isNicheAccepted={isNicheAccepted} />
+          ) : isPaywallHit ? (
             <PaywallNote title={current.label} go={go} />
           ) : (
             <>
@@ -336,7 +371,7 @@ function AppInner() {
           <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 font-mono text-[10.5px] tracking-wide text-dim sm:px-6 lg:px-8">
             <span className="flex items-center gap-2"><Dot tone="mint" pulse /> Beget VDS · PostgreSQL 16 · онлайн</span>
             <span className="flex items-center gap-2"><Dot tone="amber" /> YandexGPT-5 · ru-central1 · 42 ток/с</span>
-            <span className="flex items-center gap-2"><Dot tone="sky" /> PostgreSQL · записано 128 400 событий</span>
+            <span className="flex items-center gap-2"><Dot tone="sky" /> PostgreSQL · {live ? "запусков: " + launches.length : "демо-режим"}</span>
             <span className="ml-auto flex items-center gap-2"><Dot tone="mint" /> 0 ошибок · аптайм 99,98%</span>
           </div>
         </footer>

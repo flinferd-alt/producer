@@ -202,6 +202,14 @@ export const api = {
   savePlan: (id: number, payload: Record<string, unknown>) =>
     apiFetch<{ saved: boolean }>(`/launches/${id}/plan`, { method: "POST", body: payload }),
 
+  /** Сгенерировать стратегию продукта (программа, тарифы, методология, риски). */
+  generateProduct: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/product`, { method: "POST", body: {} }),
+
+  /** Получить текущую стратегию продукта. */
+  getProduct: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/product`),
+
   /** Получить текущую подписку и историю платежей. */
   getPayments: () =>
     apiFetch<{

@@ -10,7 +10,7 @@ interface Msg {
 }
 
 export default function Unpack({ go, push }: { go: (id: string) => void; push: (t: string, tone?: Tone) => void }) {
-  const { activeLaunchId } = useStore();
+  const { activeLaunchId, refreshLaunches } = useStore();
   const { live } = useAuth();
   const reduced = useReducedMotion();
 
@@ -128,6 +128,17 @@ export default function Unpack({ go, push }: { go: (id: string) => void; push: (
           }));
 
           const res = await api.saveBrief(activeLaunchId, payload);
+
+          // Обновляем stage запуска
+          try {
+            await apiFetch(`/launches/${activeLaunchId}`, {
+              method: "PATCH",
+              body: { stage: "brief_saved" },
+            });
+            refreshLaunches();
+          } catch (e) {
+            console.warn("Не удалось обновить stage:", e);
+          }
 
           setMsgs((m) => [
             ...m,
