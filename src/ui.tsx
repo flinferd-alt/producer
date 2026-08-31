@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LEGAL, type Tone } from "./data";
 import { api } from "./api";
 
@@ -436,29 +436,44 @@ export function PaywallNote({ title, go }: { title: string; go: (id: string) => 
         <div>
           <div className="font-display text-xl font-extrabold text-ink">{title}</div>
           <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-mut">
-            Оформите тариф «Про» — 4 900 ₽/мес, чтобы получить программу курса, тарифы, воронку продаж и экспорт стратегии.
+            Тариф «Про» — 4 900 ₽/мес. Разблокирует продукт, лид-магнит, трипваер и воронку продаж.
           </p>
         </div>
+
+        {/*Что бесплатно*/}
+        <div className="w-full max-w-md rounded-xl border border-mint/20 bg-mint/5 px-4 py-3">
+          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-mint uppercase">Бесплатно — без тарифа</div>
+          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12px] text-mut">
+            <span className="flex items-center gap-1"><Icon name="check" size={11} className="text-mint" /> Распаковка</span>
+            <span className="flex items-center gap-1"><Icon name="check" size={11} className="text-mint" /> Анализ ниши</span>
+            <span className="flex items-center gap-1"><Icon name="check" size={11} className="text-mint" /> Реклама</span>
+            <span className="flex items-center gap-1"><Icon name="check" size={11} className="text-mint" /> Платежи</span>
+            <span className="flex items-center gap-1"><Icon name="check" size={11} className="text-mint" /> Статистика</span>
+          </div>
+          <button onClick={() => go("unpack")} className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 font-mono text-[11px] font-semibold tracking-wide text-mint transition-all hover:brightness-125">
+            Посмотреть бесплатные разделы <Icon name="arrow" size={12} />
+          </button>
+        </div>
+
+        {/*Что в Pro*/}
+        <ul className="mt-1 space-y-1.5 text-left text-[12px] leading-snug text-mut">
+          <li className="flex items-start gap-2"><Icon name="crown" size={12} className="mt-0.5 shrink-0 text-amber" /> Продукт: программа курса от ИИ</li>
+          <li className="flex items-start gap-2"><Icon name="crown" size={12} className="mt-0.5 shrink-0 text-amber" /> Лид-магнит: магнит для сбора заявок</li>
+          <li className="flex items-start gap-2"><Icon name="crown" size={12} className="mt-0.5 shrink-0 text-amber" /> Трипваер: дешёвый продукт для прогрева</li>
+          <li className="flex items-start gap-2"><Icon name="crown" size={12} className="mt-0.5 shrink-0 text-amber" /> Воронка продаж с юнит-экономикой</li>
+          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Неограниченные запуски и брифы</li>
+        </ul>
+
         <div className="flex flex-col items-center gap-3">
           <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-tight text-dim">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-amber" />
             <span>Принимаю <a href={LEGAL.offerUrl} target="_blank" className="text-amber hover:underline">оферту</a> и <a href={LEGAL.privacyUrl} target="_blank" className="text-amber hover:underline">политику</a></span>
           </label>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
-              <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оплатить 4 900 ₽"}
-            </ToneBtn>
-            
-          </div>
+          <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
+            <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оплатить 4 900 ₽/мес"}
+          </ToneBtn>
           {err && <div className="text-[11px] text-coral">{err}</div>}
         </div>
-        <ul className="mt-2 space-y-1.5 text-left text-[12px] leading-snug text-mut">
-          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Программа курса сгенерирована ИИ</li>
-          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> 3 тарифа курса под вашу нишу</li>
-          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Воронка продаж с юнит-экономикой</li>
-          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Неограниченные запуски и брифы</li>
-          <li className="flex items-start gap-2"><Icon name="check" size={12} className="mt-0.5 shrink-0 text-mint" /> Экспорт стратегии в PDF</li>
-        </ul>
       </div>
     </div>
   );

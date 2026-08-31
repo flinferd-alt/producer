@@ -49,16 +49,17 @@ export default function App() {
 }
 
 function AppInner() {
-  const { session, live, isOwner, subscription, isFreeLimitReached, refreshProfile } = useAuth();
-  const { launches, activeLaunchId, setActiveLaunchId, isNicheAccepted } = useStore();
+  const { session, live, isOwner, subscription, refreshProfile } = useAuth();
+  const { launches, activeLaunchId, setActiveLaunchId } = useStore();
 
   /* Разделы, заблокированные для free-пользователей (paywall) */
   const [section, setSection] = useState("welcome");
 
-  const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel", "ads", "payments", "stats"];
-  const isPaywallHit = live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(section);
+  const PAYWALL_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel"];
+  const isPaywallHit = live && subscription === "free" && PAYWALL_SECTIONS.includes(section);
   // Агенты: просмотр свободный, управление — Pro (передаём флаг в секцию)
-  const isAgentsLocked = live && subscription === "free" && isFreeLimitReached;
+
+  const isAgentsLocked = live && subscription === "free";
   const [menuOpen, setMenuOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [launchIdx, setLaunchIdx] = useState(0); // Для демо-режима
@@ -94,20 +95,20 @@ function AppInner() {
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
   }, []);
 
-  const BLOCKED_SECTIONS = ["product", "leadmagnet", "tripwire", "funnel", "ads", "payments", "stats"];
+
 
   const go = useCallback((id: string) => {
-    if (live && !isNicheAccepted && BLOCKED_SECTIONS.includes(id)) {
-      push("Сначала примите стратегию ниши", "amber");
-      return;
+    if (live && subscription === "free" && PAYWALL_SECTIONS.includes(id)) {
+      push("Раздел доступен на тарифе «Про»", "amber");
     }
-  if (live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(id)) {
-        push("Раздел доступен на тарифе «Про»", "amber");
-      }
+
+
+
     setSection(id);
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [live, isNicheAccepted, subscription, isFreeLimitReached, push]);
+
+  }, [live, subscription, push]);
 
   useEffect(() => {
     const fn = (e: MouseEvent) => {
@@ -185,8 +186,7 @@ function AppInner() {
                       {n.label}
                       {n.id === "cabinet" && !live && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Требуется вход"><Icon name="lock" size={11} className="text-amber/60" /></span>}
                       {n.id === "master" && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Только владелец"><Icon name="crown" size={11} className="text-mint/70" /></span>}
-                      {live && !isNicheAccepted && BLOCKED_SECTIONS.includes(n.id) && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Сначала примите стратегию ниши"><Icon name="lock" size={11} className="text-coral/60" /></span>}
-                      {live && subscription === "free" && isFreeLimitReached && PAYWALL_SECTIONS.includes(n.id) && isNicheAccepted && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Тариф «Про» — разблокирует раздел"><Icon name="crown" size={11} className="text-amber/70" /></span>}
+                      {live && subscription === "free" && PAYWALL_SECTIONS.includes(n.id) && <span className={`grid place-items-center ${active ? "" : "ml-auto"}`} title="Тариф «Про» — разблокирует раздел"><Icon name="crown" size={11} className="text-amber/70" /></span>}
                       {active && <span className={`${n.id === "cabinet" || n.id === "master" ? "" : "ml-auto"} h-1.5 w-1.5 rounded-full bg-amber`} />}
                     </button>
                   );
