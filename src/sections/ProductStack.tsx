@@ -141,7 +141,9 @@ export function ProductSection({ push }: { push: (t: string, tone?: Tone) => voi
   const d = data!;
   const revenue = price * target;
   const cac = d.unit_economics.cac;
-  const romi = d.unit_economics.romi;
+  const ltv = price;
+  const romi = cac > 0 ? Math.round(((ltv - cac) / cac) * 100) : 0;
+  const profit = ltv - cac;
 
   return (
     <div className="space-y-6">
@@ -234,16 +236,26 @@ export function ProductSection({ push }: { push: (t: string, tone?: Tone) => voi
                 </div>
                 <Range value={target} min={10} max={200} step={1} onChange={(v) => setTarget(Math.round(v))} />
               </div>
-              <div className="flex items-center gap-5 rounded-lg border border-amber/25 bg-amber/[0.05] px-5 py-3">
-                <div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-amber/25 bg-amber/[0.05] px-5 py-4">
                   <div className="font-mono text-[10px] tracking-wider text-dim uppercase">Прогноз выручки</div>
-                  <div className="font-display text-2xl font-extrabold text-amber">{fmt(revenue)} ₽</div>
+                  <div className="mt-1 font-display text-2xl font-extrabold text-amber">{fmt(revenue)} ₽</div>
+                  <div className="mt-1 font-mono text-[10.5px] text-mut">{target} продаж × {fmt(price)} ₽</div>
                 </div>
-                <div className="h-9 w-px bg-line" />
-                <div className="space-y-0.5 font-mono text-[11px] text-mut">
-                  <div>CAC: <span className="text-ink">{fmt(cac)} ₽</span></div>
-                  <div>ROMI: <span className="text-mint">{fmt(romi)}%</span></div>
-                  <div>Точка окупаемости: <span className="text-sky">{d.unit_economics.break_even} продаж</span></div>
+                <div className="rounded-lg border border-mint/20 bg-mint/[0.04] px-5 py-4">
+                  <div className="font-mono text-[10px] tracking-wider text-mint uppercase">Маржа на клиента</div>
+                  <div className="mt-1 font-display text-2xl font-extrabold text-mint">{fmt(profit)} ₽</div>
+                  <div className="mt-1 font-mono text-[10.5px] text-mut">LTV {fmt(ltv)} ₽ − CAC {fmt(cac)} ₽</div>
+                </div>
+                <div className="rounded-lg border border-sky/20 bg-sky/[0.04] px-5 py-4">
+                  <div className="font-mono text-[10px] tracking-wider text-sky uppercase">ROMI</div>
+                  <div className="mt-1 font-display text-2xl font-extrabold text-sky">{fmt(romi)}%</div>
+                  <div className="mt-1 font-mono text-[10.5px] text-mut">возврат на каждый ₽ в трафик</div>
+                </div>
+                <div className="rounded-lg border border-line bg-deep/50 px-5 py-4">
+                  <div className="font-mono text-[10px] tracking-wider text-dim uppercase">Точка окупаемости</div>
+                  <div className="mt-1 font-display text-2xl font-extrabold text-ink">{d.unit_economics.break_even} продаж</div>
+                  <div className="mt-1 font-mono text-[10.5px] text-mut">когда вложения в трафик вернутся</div>
                 </div>
               </div>
             </div>

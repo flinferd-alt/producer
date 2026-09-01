@@ -235,11 +235,15 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
     }
   };
 
-  const handlePay = async () => {
+    const handlePay = async () => {
     setPaying(true);
     try {
       const res = await api.createPayment("pro");
-      if (res.confirmation_url) window.location.href = res.confirmation_url;
+      if (res.confirmation_url) {
+        window.location.href = res.confirmation_url;
+      } else {
+        push("YooKassa не вернула ссылку оплаты. Попробуйте позже или свяжитесь с поддержкой.", "coral");
+      }
     } catch (e) {
       push(e instanceof ApiError ? e.message : "Ошибка создания платежа", "coral");
     } finally {

@@ -90,6 +90,22 @@ export interface ProductContext {
   recommendations: string[];
 }
 
+export interface LeadMagnetContext {
+  niche_name: string;
+  variants: {
+    title: string;
+    sub: string;
+    format: string;
+    bullets: string[];
+    target_segment: string;
+    conv: number;
+    leads: number;
+    channel: string;
+  }[];
+  ai_verdict: string;
+  recommended_idx: number;
+}
+
 interface StoreValue {
   real: RealData;
   loaded: boolean;
@@ -111,6 +127,10 @@ interface StoreValue {
   /* --- Продукт: стратегия от ИИ --- */
   productContext: ProductContext | null;
   setProductContext: (ctx: ProductContext | null) => void;
+
+  /* --- Лид-магнит: от ИИ --- */
+  leadMagnetContext: LeadMagnetContext | null;
+  setLeadMagnetContext: (ctx: LeadMagnetContext | null) => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -143,6 +163,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeLaunchId, setActiveLaunchId] = useState<number | null>(null);
   const [nicheContext, setNicheContext] = useState<NicheContext | null>(null);
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
+  const [leadMagnetContext, setLeadMagnetContext] = useState<LeadMagnetContext | null>(null);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -165,6 +186,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setNicheContext(null);
     setProductContext(null);
+    setLeadMagnetContext(null);
   }, [activeLaunchId]);
 
   const refreshData = useCallback(async () => {
@@ -261,7 +283,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, refreshProfile, logout }), [session, login, register, refreshProfile, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
-  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext]);
+  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext, leadMagnetContext, setLeadMagnetContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext, leadMagnetContext]);
 
   return (
     <AuthCtx.Provider value={auth}>

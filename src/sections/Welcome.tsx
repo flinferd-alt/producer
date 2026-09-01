@@ -44,6 +44,8 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
       const res = await api.createPayment(tariff);
       if (res.confirmation_url) {
         window.location.href = res.confirmation_url;
+      } else {
+        setPayError("YooKassa не вернула ссылку оплаты. Попробуйте позже или свяжитесь с поддержкой.");
       }
     } catch (e) {
       setPayError(e instanceof Error ? e.message : "Ошибка создания платежа");

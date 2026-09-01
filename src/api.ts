@@ -210,6 +210,14 @@ export const api = {
   getProduct: (id: number) =>
     apiFetch<Record<string, unknown>>(`/launches/${id}/product`),
 
+  /** Сгенерировать лид-магнит (3 варианта A/B/C + вердикт ИИ). */
+  generateLeadMagnet: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/leadmagnet`, { method: "POST", body: {} }),
+
+  /** Получить текущий лид-магнит. */
+  getLeadMagnet: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/leadmagnet`),
+
   /** Получить текущую подписку и историю платежей. */
   getPayments: () =>
     apiFetch<{

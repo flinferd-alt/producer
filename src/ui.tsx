@@ -420,7 +420,11 @@ export function PaywallNote({ title, go }: { title: string; go: (id: string) => 
     setPaying(true); setErr("");
     try {
       const res = await api.createPayment("pro");
-      if (res.confirmation_url) window.location.href = res.confirmation_url;
+      if (res.confirmation_url) {
+        window.location.href = res.confirmation_url;
+      } else {
+        setErr("YooKassa не вернула ссылку оплаты. Проверьте настройки магазина или попробуйте позже.");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка оплаты");
     } finally { setPaying(false); }

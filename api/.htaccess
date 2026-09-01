@@ -6,6 +6,7 @@ RewriteBase /api/
 RewriteRule ^launches/([0-9]+)/brief/?$ launches_brief.php?id=$1 [L,QSA]
 RewriteRule ^launches/([0-9]+)/niche/?$ launches_niche.php?id=$1 [L,QSA]
 RewriteRule ^launches/([0-9]+)/plan/?$ launches_plan.php?id=$1 [L,QSA]
+RewriteRule ^launches/([0-9]+)/product/?$ launches_product.php?id=$1 [L,QSA]
 RewriteRule ^launches/([0-9]+)/?$ launches_detail.php?id=$1 [L,QSA]
 
 # 2. Вебхук YooKassa (без .php расширения в URL)

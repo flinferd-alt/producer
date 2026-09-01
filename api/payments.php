@@ -125,7 +125,7 @@ try {
             'return_url' => (string) env('YOOKASSA_RETURN_URL', 'https://producer-ai.ru/?paid=1'),
         ],
         'description' => $desc,
-        'save_payment_method' => true, // Разрешаем сохранение способа оплаты для рекуррентных списаний
+        // save_payment_method убран: рекуррентные платежи требуют согласования с менеджером ЮMoney
         'metadata' => [
             'user_id'  => (string) $who['user_id'],
             'login'    => $who['login'] ?? '',
@@ -152,19 +152,42 @@ try {
     $curlErr  = curl_error($ch);
     curl_close($ch);
 
+    // Логируем сырой ответ YooKassa для отладки
+    error_log('YooKassa raw response (HTTP ' . $httpCode . '): ' . substr((string) $response, 0, 1000));
+
     if ($response === false) {
         fail('Ошибка соединения с YooKassa: ' . $curlErr, 502);
     }
 
     $yk = json_decode($response, true);
     if (!is_array($yk) || !isset($yk['id'])) {
-        fail('YooKassa вернула некорректный ответ (HTTP ' . $httpCode . ')', 502);
+        fail('YooKassa вернула некорректный ответ (HTTP ' . $httpCode . '): ' . substr((string) $response, 0, 300), 502);
+    }
+
+    // Проверяем статус платежа
+    $ykStatus = $yk['status'] ?? 'unknown';
+    if ($ykStatus === 'canceled') {
+        $cancelReason = $yk['cancellation_details']['reason'] ?? 'неизвестно';
+        fail('Платёж отменён YooKassa: ' . $cancelReason, 402);
     }
 
     // Сохраняем платёж в БД
     $confirmationUrl = $yk['confirmation']['confirmation_url'] ?? '';
     $ykId = $yk['id'];
     $status = $yk['status'] ?? 'pending';
+
+    // Логируем структуру confirmation для отладки
+    error_log('YooKassa confirmation: ' . json_encode($yk['confirmation'] ?? null, JSON_UNESCAPED_UNICODE));
+    error_log('YooKassa full keys: ' . implode(', ', array_keys($yk)));
+
+    // Fallback: если confirmation_url пустой, возвращаем URL для встраивания
+    if ($confirmationUrl === '') {
+        $confirmationUrl = $yk['confirmation']['url'] ?? '';
+    }
+    if ($confirmationUrl === '' && $status === 'pending') {
+        // Если URL всё ещё пуст — возможно, нужен другой тип подтверждения
+        $confirmationUrl = $yk['confirmation']['return_url'] ?? '';
+    }
 
     db()->prepare(
         'INSERT INTO payments (yookassa_id, user_id, tariff, amount, currency, status, description, metadata)
