@@ -23,7 +23,7 @@ interface AuthValue {
   session: Session;
   live: boolean;
   isOwner: boolean;
-  subscription: "free" | "trial" | "pro" | "studio";
+  subscription: "free" | "pro";
   freeLaunchesUsed: number;
   isFreeLimitReached: boolean;
   login: (login: string, password: string) => Promise<{ ok: true; role: Role }>;
@@ -106,6 +106,22 @@ export interface LeadMagnetContext {
   recommended_idx: number;
 }
 
+export interface TripwireContext {
+  niche_name: string;
+  title: string;
+  desc: string;
+  bullets: string[];
+  price: number;
+  old_price: number;
+  conv: number;
+  oto_available: boolean;
+  oto_title: string;
+  oto_price: number;
+  oto_conv: number;
+  ai_verdict: string;
+  recommendations: string[];
+}
+
 interface StoreValue {
   real: RealData;
   loaded: boolean;
@@ -131,6 +147,10 @@ interface StoreValue {
   /* --- Лид-магнит: от ИИ --- */
   leadMagnetContext: LeadMagnetContext | null;
   setLeadMagnetContext: (ctx: LeadMagnetContext | null) => void;
+
+  /* --- Трипваер: от ИИ --- */
+  tripwireContext: TripwireContext | null;
+  setTripwireContext: (ctx: TripwireContext | null) => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -146,9 +166,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return { role: user.role === "owner" ? "owner" : "user", login: user.login, name: user.name, id: user.id };
   });
 
-  const [subscription, setSubscription] = useState<"free" | "trial" | "pro" | "studio">(() => {
+  const [subscription, setSubscription] = useState<"free" | "pro">(() => {
     const user = getStoredUser();
-    return (user?.subscription_status as "free" | "pro" | "studio") ?? "free";
+    return (user?.subscription_status as "free" | "pro") ?? "free";
   });
   const [freeLaunchesUsed, setFreeLaunchesUsed] = useState(() => {
     const user = getStoredUser();
@@ -164,6 +184,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [nicheContext, setNicheContext] = useState<NicheContext | null>(null);
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
   const [leadMagnetContext, setLeadMagnetContext] = useState<LeadMagnetContext | null>(null);
+  const [tripwireContext, setTripwireContext] = useState<TripwireContext | null>(null);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -187,6 +208,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setNicheContext(null);
     setProductContext(null);
     setLeadMagnetContext(null);
+    setTripwireContext(null);
   }, [activeLaunchId]);
 
   const refreshData = useCallback(async () => {
@@ -283,7 +305,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, refreshProfile, logout }), [session, login, register, refreshProfile, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
-  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext, leadMagnetContext, setLeadMagnetContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext, leadMagnetContext]);
+  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext, leadMagnetContext, setLeadMagnetContext, tripwireContext, setTripwireContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext, leadMagnetContext, tripwireContext]);
 
   return (
     <AuthCtx.Provider value={auth}>

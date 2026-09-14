@@ -3,7 +3,7 @@
 /**
  * payments.php — платежи YooKassa и управление подпиской.
  *
- * POST   /api/payments { tariff: "pro"|"studio" }
+ * POST   /api/payments { tariff: "pro" }
  *   → { confirmation_url, payment_id }
  *
  * GET    /api/payments
@@ -83,23 +83,13 @@ try {
     $in = input();
     $tariff = trim((string)($in['tariff'] ?? ''));
 
-    // Тарифы и цены
+    // Тарифы и цены (линейка: free + pro)
     $TARIFFS = [
-        'pro'    => ['price' => 4900, 'desc' => 'Подписка ПРОДЮСЕР.AI — тариф «Про» (1 месяц)'],
-        'studio' => ['price' => 0,    'desc' => 'Подписка ПРОДЮСЕР.AI — тариф «Студия» (по договорённости)'],
+        'pro' => ['price' => 4900, 'desc' => 'Подписка ПРОДЮСЕР.AI — тариф «Про» (1 месяц)'],
     ];
 
     if (!isset($TARIFFS[$tariff])) {
-        fail('Неизвестный тариф. Доступны: pro, studio', 400);
-    }
-
-    if ($tariff === 'studio') {
-        // Студия — не через YooKassa, редирект на связь
-        json_out([
-            'confirmation_url' => 'https://t.me/bazhenov_app',
-            'payment_id' => null,
-            'note' => 'Тариф «Студия» оформляется через менеджера',
-        ]);
+        fail('Неизвестный тариф. Доступен: pro', 400);
     }
 
     $price    = $TARIFFS[$tariff]['price'];

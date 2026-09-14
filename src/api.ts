@@ -24,7 +24,7 @@ export interface StoredUser {
   login: string;
   role: "user" | "owner";
   name: string;
-  subscription_status: "free" | "trial" | "pro" | "studio";
+  subscription_status: "free" | "pro";
   subscription_expires_at?: string | null;
   free_launches_used: number;
 }
@@ -218,6 +218,14 @@ export const api = {
   getLeadMagnet: (id: number) =>
     apiFetch<Record<string, unknown>>(`/launches/${id}/leadmagnet`),
 
+  /** Сгенерировать трипваер (оффер, цена, конверсия, OTO, вердикт ИИ). */
+  generateTripwire: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/tripwire`, { method: "POST", body: {} }),
+
+  /** Получить текущий трипваер. */
+  getTripwire: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/tripwire`),
+
   /** Получить текущую подписку и историю платежей. */
   getPayments: () =>
     apiFetch<{
@@ -246,7 +254,7 @@ export const api = {
     apiFetch<{ canceled: boolean; note: string }>("/payments", { method: "DELETE" }),
 
   /** Создать платёж в YooKassa. Возвращает confirmation_url для редиректа. */
-  createPayment: (tariff: "pro" | "studio") =>
+  createPayment: (tariff: "pro") =>
     apiFetch<{ confirmation_url: string; payment_id: string | null }>(
       "/payments",
       { method: "POST", body: { tariff } },

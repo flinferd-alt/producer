@@ -29,7 +29,7 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
     setEmailSent(true);
   };
 
-  const handlePay = async (tariff: "pro" | "studio") => {
+  const handlePay = async (tariff: "pro") => {
     if (!getToken()) {
       onTry(); // перейти к входу в кабинет
       return;
@@ -160,7 +160,7 @@ export default function Welcome({ onTry }: { onTry: () => void }) {
                         <span>Принимаю <a href={LEGAL.offerUrl} target="_blank" className="text-amber hover:underline">условия оферты</a> и <a href={LEGAL.privacyUrl} target="_blank" className="text-amber hover:underline">политику конфиденциальности</a></span>
                       </label>
                     )}
-                    <ToneBtn tone={p.tone === "sky" ? "ghost" : p.tone === "mint" ? "mint" : "amber"} onClick={() => { if (p.id === "pro") handlePay("pro"); else if (p.id === "studio") handlePay("studio"); else onTry(); }} disabled={paying && p.id !== "starter"} className="w-full justify-center">
+                    <ToneBtn tone={p.tone === "sky" ? "ghost" : p.tone === "mint" ? "mint" : "amber"} onClick={() => { if (p.id === "pro") handlePay("pro"); else onTry(); }} disabled={paying && p.id !== "starter"} className="w-full justify-center">
                       {p.cta}
                     </ToneBtn>
                   </div>

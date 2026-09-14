@@ -317,31 +317,31 @@ function CabinetInner({ push, go }: { push: (t: string, tone?: Tone) => void; go
 
       {/* статус подписки */}
       <Reveal>
-        <Panel className={`flex flex-wrap items-center gap-4 p-5 ${subscription === "pro" ? "border-mint/30" : subscription === "studio" ? "border-sky/30" : isFreeLimitReached ? "border-coral/30" : "border-amber/30"}`}>
-          <span className={`grid h-11 w-11 place-items-center rounded-xl ${subscription === "pro" ? "bg-mint/12 text-mint" : subscription === "studio" ? "bg-sky/12 text-sky" : "bg-amber/12 text-amber"}`}>
+        <Panel className={`flex flex-wrap items-center gap-4 p-5 ${subscription === "pro" ? "border-mint/30" : isFreeLimitReached ? "border-coral/30" : "border-amber/30"}`}>
+          <span className={`grid h-11 w-11 place-items-center rounded-xl ${subscription === "pro" ? "bg-mint/12 text-mint" : "bg-amber/12 text-amber"}`}>
             <Icon name={subscription === "free" ? "spark" : "crown"} size={21} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="font-display text-[15px] font-extrabold text-ink">
-              {subscription === "pro" ? "Тариф «Про»" : subscription === "studio" ? "Тариф «Студия»" : "Бесплатный тариф"}
+              {subscription === "pro" ? "Тариф «Про»" : "Бесплатный тариф"}
             </div>
             <div className="font-mono text-[10.5px] tracking-wider text-dim uppercase">
-              {subscription === "pro" || subscription === "studio"
+              {subscription === "pro"
                 ? "Неограниченные запуски, брифы и анализ ниши"
                 : isFreeLimitReached
                   ? "Бесплатный запуск использован — оформите тариф"
                   : "1 бесплатный запуск · далее — тариф «Про»"}
             </div>
           </div>
-          <Chip tone={subscription === "pro" ? "mint" : subscription === "studio" ? "sky" : isFreeLimitReached ? "coral" : "amber"}>
-            {subscription === "pro" ? "4 900 ₽/мес" : subscription === "studio" ? "по договорённости" : isFreeLimitReached ? "лимит исчерпан" : "1 запуск бесплатно"}
+          <Chip tone={subscription === "pro" ? "mint" : isFreeLimitReached ? "coral" : "amber"}>
+            {subscription === "pro" ? "4 900 ₽/мес" : isFreeLimitReached ? "лимит исчерпан" : "1 запуск бесплатно"}
           </Chip>
           {subscription === "free" && (
                       <ToneBtn tone="amber" onClick={handlePay} disabled={paying}>
                         <Icon name="spark" size={14} /> {paying ? "Перенаправление..." : "Оформить тариф"} «Про»
                       </ToneBtn>
                     )}
-                    {(subscription === "pro" || subscription === "studio") && (
+                    {(subscription === "pro") && (
                       <div className="flex flex-wrap items-center gap-3">
                         {subInfo.cancel_at ? (
                           <Chip tone="amber">Отменена с {new Date(subInfo.cancel_at).toLocaleDateString("ru-RU")}</Chip>

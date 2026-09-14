@@ -77,13 +77,18 @@ function db(): PDO
 
 /* ---------------- 3. CORS + HTTP-хелперы ---------------- */
 
-/** CORS: только разрешённые origins из .env (никаких «*»), preflight обрабатывается здесь же. */
+/** CORS: только origins из whitelist ALLOWED_ORIGINS (.env, через запятую).
+ * Никогда не отражаем произвольный Origin и не используем "*" — иначе
+ * Allow-Credentials:true позволял бы чужим сайтам слать авторизованные запросы.
+ * Дефолт fail-soft: прод-домен + localhost для локальной разработки. */
 function cors(): void
 {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $origin  = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $allowed = array_filter(
+        array_map('trim', explode(',', (string) env('ALLOWED_ORIGINS', 'https://producer-ai.ru,http://localhost:3000')))
+    );
 
-    // Если запрос идёт с локалхоста или нашего домена — разрешаем
-    if ($origin !== '') {
+    if ($origin !== '' && in_array($origin, $allowed, true)) {
         header('Access-Control-Allow-Origin: ' . $origin);
         header('Access-Control-Allow-Credentials: true');
         header('Vary: Origin');
