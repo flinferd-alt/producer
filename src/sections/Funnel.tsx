@@ -1,49 +1,131 @@
 import { useEffect, useRef, useState } from "react";
-import { FUNNEL_OPTIMIZED, FUNNEL_TIPS, type FunnelStage, type Tone } from "../data";
+import { api, apiFetch, ApiError } from "../api";
 import { useAuth, useStore } from "../store";
+import type { FunnelContext } from "../store";
 import { Chip, Head, Icon, LockedNote, Panel, Range, Reveal, ToneBtn, useReducedMotion, fmt } from "../ui";
+import type { Tone } from "../data";
 
-/** Пустая структура воронки — до загрузки этапов из БД. */
-const EMPTY_STAGES: FunnelStage[] = [
-  { id: "reg", label: "Клик → регистрация", value: 0, bench: 0 },
-  { id: "show", label: "Регистрация → пришли", value: 0, bench: 0 },
-  { id: "stay", label: "Пришли → досмотрели оффер", value: 0, bench: 0 },
-  { id: "buy", label: "Оффер → покупка", value: 0, bench: 0 },
-  { id: "trip", label: "Не купили → трипваер", value: 0, bench: 0 },
+type Stage = FunnelContext["stages"][number];
+
+/** Пустая структура воронки — до генерации ИИ. */
+const EMPTY_STAGES: Stage[] = [
+  { id: "reg", label: "Клик → регистрация на вебинар", value: 8.5, bench: 7.0, tip: "", opt: 9.8 },
+  { id: "show", label: "Регистрация → пришли на эфир", value: 45, bench: 42, tip: "", opt: 51 },
+  { id: "stay", label: "Эфир → досмотрели до оффера", value: 60, bench: 55, tip: "", opt: 64 },
+  { id: "buy", label: "Досмотрели → купили курс", value: 6.5, bench: 5.2, tip: "", opt: 7.4 },
+  { id: "trip", label: "Не купили → взяли трипваер", value: 4.5, bench: 3.5, tip: "", opt: 5.6 },
 ];
+
+const SPEND = 150000;
 
 export default function Funnel({ push }: { push: (t: string, tone?: Tone) => void }) {
   const reduced = useReducedMotion();
   const { live } = useAuth();
-  const { real, set } = useStore();
-  const [stages, setStages] = useState<FunnelStage[]>(real.funnel.length ? real.funnel : EMPTY_STAGES);
-  const [traffic, setTraffic] = useState(real.traffic);
-  const [price, setPrice] = useState(real.price);
+  const { activeLaunchId, tripwireContext, funnelContext, setFunnelContext, refreshLaunches } = useStore();
+  const [mode, setMode] = useState<"loading" | "empty" | "generating" | "data">("loading");
+  const [data, setData] = useState<FunnelContext | null>(null);
+  const [stages, setStages] = useState<Stage[]>(EMPTY_STAGES);
+  const [traffic, setTraffic] = useState(12000);
+  const [price, setPrice] = useState(24900);
   const animRef = useRef(0);
-  const synced = useRef(false);
 
-  // когда данные из БД доехали (GET /api/data) — подставляем их один раз
+  // Данные уже в сторе (после генерации) — подхватываем без запроса
   useEffect(() => {
-    if (!synced.current && real.funnel.length > 0) {
-      synced.current = true;
-      setStages(real.funnel);
-      setTraffic(real.traffic);
-      setPrice(real.price);
+    if (funnelContext) {
+      setData(funnelContext);
+      setMode("data");
     }
-  }, [real.funnel, real.traffic, real.price]);
+  }, [funnelContext]);
 
-  /** изменения уходят в состояние и в БД (PUT /api/data, только для вошедших) */
-  const persist = (patch: { stages?: FunnelStage[]; traffic?: number; price?: number }) => {
-    if (!live) return;
-    set({
-      ...(patch.stages ? { funnel: patch.stages } : {}),
-      ...(patch.traffic !== undefined ? { traffic: patch.traffic } : {}),
-      ...(patch.price !== undefined ? { price: patch.price } : {}),
-    });
+  // Загружаем воронку с API при смене запуска
+  useEffect(() => {
+    if (!live || !activeLaunchId) {
+      setMode("empty");
+      return;
+    }
+    let mounted = true;
+    setMode("loading");
+    apiFetch<FunnelContext>(`/launches/${activeLaunchId}/funnel`)
+      .then((res) => {
+        if (mounted) {
+          setData(res);
+          setMode("data");
+        }
+      })
+      .catch(() => {
+        if (mounted) setMode("empty");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeLaunchId, live]);
+
+  // Синк локального симулятора из снапшота ИИ
+  useEffect(() => {
+    if (!data) return;
+    setStages(data.stages.length ? data.stages : EMPTY_STAGES);
+    setTraffic(data.traffic || 12000);
+    setPrice(data.price || 24900);
+  }, [data]);
+
+  const generate = async () => {
+    if (!live || !activeLaunchId) return;
+    setMode("generating");
+    push("ИИ-продюсер проектирует воронку...", "amber");
+    try {
+      await api.generateFunnel(activeLaunchId);
+      const res = await apiFetch<FunnelContext>(`/launches/${activeLaunchId}/funnel`);
+      setData(res);
+      setFunnelContext(res);
+      setMode("data");
+      push("Воронка сгенерирована", "mint");
+      void refreshLaunches();
+    } catch (e) {
+      setMode("empty");
+      push(e instanceof ApiError ? e.message : "Не удалось сгенерировать воронку", "coral");
+    }
   };
 
   if (!live) {
-    return <LockedNote title="Симулятор воронки" text="Этапы и бенчмарки загружаются из таблицы funnel-настроек в PostgreSQL. Войдите, чтобы крутить конверсии и видеть пересчёт юнит-экономики." />;
+    return <LockedNote title="Воронка продаж" text="ИИ-продюсер проектирует воронку запуска: этапы с конверсиями, бенчмарки ниши, точки оптимизации и прогноз юнит-экономики с учётом трипваера. Войдите, чтобы сгенерировать воронку." />;
+  }
+
+  if (mode === "loading") {
+    return (
+      <Panel className="p-10 text-center">
+        <div className="font-mono text-[11px] tracking-wider text-dim uppercase">Загружаем воронку запуска...</div>
+      </Panel>
+    );
+  }
+
+  if (mode === "generating") {
+    return (
+      <Panel className="p-10 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <Icon name="spark" size={16} className="text-amber" />
+          <span className="font-mono text-[11px] tracking-wider text-amber uppercase">ИИ-продюсер проектирует воронку...</span>
+        </div>
+      </Panel>
+    );
+  }
+
+  if (mode === "empty") {
+    return (
+      <Reveal>
+        <Panel className="p-10 text-center">
+          <Head kicker="Воронка продаж" title="Воронка ещё не спроектирована" />
+          <p className="mx-auto mt-2 max-w-lg text-[12.5px] leading-relaxed text-mut">
+            ИИ-продюсер соберёт воронку под ваш запуск: этапы с конверсиями, бенчмарки ниши,
+            точки оптимизации и прогноз юнит-экономики с учётом трипваера.
+          </p>
+          <div className="mt-6">
+            <ToneBtn onClick={generate} tone="coral">
+              <Icon name="spark" size={16} /> Сгенерировать воронку
+            </ToneBtn>
+          </div>
+        </Panel>
+      </Reveal>
+    );
   }
 
   const reg = stages[0].value;
@@ -57,28 +139,27 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
   const stayed = (showed * stay) / 100;
   const sales = (stayed * buy) / 100;
   const tripSales = ((stayed - sales) * trip) / 100;
-  const revenue = sales * price + tripSales * 990;
-  const spend = 150000;
+  const twPrice = tripwireContext?.price ?? 990;
+  const revenue = sales * price + tripSales * twPrice;
+  const spend = SPEND;
   const romi = ((revenue - spend) / spend) * 100;
   const cac = sales > 0 ? spend / sales : 0;
 
   const setStage = (id: string, v: number) => {
-    const next = stages.map((x) => (x.id === id ? { ...x, value: v } : x));
-    setStages(next);
-    persist({ stages: next });
+    setStages((prev) => prev.map((x) => (x.id === id ? { ...x, value: v } : x)));
   };
 
   const optimize = () => {
-    const optimized = stages.map((x) => ({ ...x, value: FUNNEL_OPTIMIZED[x.id] }));
+    const optimized = stages.map((x) => ({ ...x, value: x.opt }));
+    const delta = ((optimized.reduce((s, x) => s + x.value, 0) - stages.reduce((s, x) => s + x.value, 0)) / 100) * 100;
     if (reduced) {
       setStages(optimized);
-      persist({ stages: optimized });
-      push("ИИ-оптимизация применена: +163 000 ₽ к прогнозу выручки", "mint");
+      push("ИИ-оптимизация воронки применена", "mint");
       return;
     }
     cancelAnimationFrame(animRef.current);
     const from = stages.map((s) => s.value);
-    const to = stages.map((s) => FUNNEL_OPTIMIZED[s.id]);
+    const to = stages.map((s) => s.opt);
     const start = performance.now();
     const tick = (t: number) => {
       const p = Math.min(1, (t - start) / 900);
@@ -87,8 +168,7 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
       if (p < 1) {
         animRef.current = requestAnimationFrame(tick);
       } else {
-        persist({ stages: optimized });
-        push("ИИ-оптимизация применена: +163 000 ₽ к прогнозу выручки", "mint");
+        push(`ИИ-оптимизация применена: +${fmt(Math.round(delta))} п.п. суммарного прироста конверсий`, "mint");
       }
     };
     animRef.current = requestAnimationFrame(tick);
@@ -125,7 +205,7 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
                   <Range value={s.value} min={0.5} max={s.id === "reg" || s.id === "buy" || s.id === "trip" ? 15 : 90} step={0.1} onChange={(v) => setStage(s.id, v)} />
                   <div className="mt-2 flex items-start gap-2 text-[11px] leading-snug text-dim">
                     <Icon name="spark" size={12} className="mt-0.5 shrink-0 text-sky" />
-                    <span>Эталон ниши: <b className="text-mut">{s.bench.toFixed(1).replace(".", ",")}%</b> · {FUNNEL_TIPS[s.id]}</span>
+                    <span>Эталон ниши: <b className="text-mut">{s.bench.toFixed(1).replace(".", ",")}%</b>{s.tip ? <> · {s.tip}</> : null}</span>
                   </div>
                 </div>
               );
@@ -137,13 +217,13 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
               <div className="mb-2 flex items-center justify-between font-mono text-[11px] text-mut">
                 <span>Клики (трафик за запуск)</span><span className="text-amber">{fmt(traffic)}</span>
               </div>
-              <Range value={traffic} min={4000} max={40000} step={500} onChange={(v) => { setTraffic(v); persist({ traffic: v }); }} />
+              <Range value={traffic} min={4000} max={40000} step={500} onChange={(v) => setTraffic(v)} />
             </div>
             <div className="rounded-lg border border-line bg-deep/40 p-4">
               <div className="mb-2 flex items-center justify-between font-mono text-[11px] text-mut">
                 <span>Цена курса</span><span className="text-amber">{fmt(price)} ₽</span>
               </div>
-              <Range value={price} min={9900} max={59900} step={100} onChange={(v) => { setPrice(v); persist({ price: v }); }} />
+              <Range value={price} min={9900} max={59900} step={100} onChange={(v) => setPrice(v)} />
             </div>
           </div>
         </Panel>
@@ -207,11 +287,33 @@ export default function Funnel({ push }: { push: (t: string, tone?: Tone) => voi
             </div>
           </Panel>
 
+          {data?.ai_verdict ? (
+            <Panel className="p-5">
+              <div className="flex items-start gap-3">
+                <Icon name="spark" size={14} className="mt-1 shrink-0 text-amber" />
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.2em] text-dim uppercase">Вердикт ИИ-продюсера</div>
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-mut">{data.ai_verdict}</p>
+                  {data.recommendations?.length ? (
+                    <ul className="mt-3 space-y-1.5">
+                      {data.recommendations.map((r, i) => (
+                        <li key={i} className="flex items-start gap-2 text-[12px] leading-snug text-dim">
+                          <span className="mt-0.5 text-mint">▲</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </div>
+            </Panel>
+          ) : null}
+
           <ToneBtn className="w-full justify-center" onClick={optimize}>
             <Icon name="spark" size={15} /> Применить ИИ-оптимизацию воронки
           </ToneBtn>
-          <button onClick={() => push("Конфигурация воронки сохранена как шаблон «Вебинар v3» — доступна для следующих запусков", "sky")} className="w-full cursor-pointer rounded-lg border border-line py-2.5 font-mono text-[11px] tracking-wide text-mut uppercase transition-colors hover:border-sky/40 hover:text-sky">
-            Сохранить как шаблон запуска
+          <button onClick={generate} className="w-full cursor-pointer rounded-lg border border-line py-2.5 font-mono text-[11px] tracking-wide text-mut uppercase transition-colors hover:border-sky/40 hover:text-sky">
+            Перегенерировать воронку
           </button>
         </div>
       </Reveal>

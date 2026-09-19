@@ -122,6 +122,17 @@ export interface TripwireContext {
   recommendations: string[];
 }
 
+export interface FunnelContext {
+  niche_name: string;
+  model: string;
+  stages: { id: string; label: string; value: number; bench: number; tip: string; opt: number }[];
+  traffic: number;
+  price: number;
+  optimized: Record<string, number>;
+  ai_verdict: string;
+  recommendations: string[];
+}
+
 interface StoreValue {
   real: RealData;
   loaded: boolean;
@@ -151,6 +162,10 @@ interface StoreValue {
   /* --- Трипваер: от ИИ --- */
   tripwireContext: TripwireContext | null;
   setTripwireContext: (ctx: TripwireContext | null) => void;
+
+  /* --- Воронка: от ИИ --- */
+  funnelContext: FunnelContext | null;
+  setFunnelContext: (ctx: FunnelContext | null) => void;
 }
 
 const AuthCtx = createContext<AuthValue | null>(null);
@@ -185,6 +200,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
   const [leadMagnetContext, setLeadMagnetContext] = useState<LeadMagnetContext | null>(null);
   const [tripwireContext, setTripwireContext] = useState<TripwireContext | null>(null);
+  const [funnelContext, setFunnelContext] = useState<FunnelContext | null>(null);
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -209,6 +225,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setProductContext(null);
     setLeadMagnetContext(null);
     setTripwireContext(null);
+    setFunnelContext(null);
   }, [activeLaunchId]);
 
   const refreshData = useCallback(async () => {
@@ -305,7 +322,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const auth = useMemo<AuthValue>(() => ({ session, live: session.role !== "guest", isOwner: session.role === "owner", subscription, freeLaunchesUsed, isFreeLimitReached, login, register, refreshProfile, logout }), [session, login, register, refreshProfile, logout, subscription, freeLaunchesUsed, isFreeLimitReached]);
-  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext, leadMagnetContext, setLeadMagnetContext, tripwireContext, setTripwireContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext, leadMagnetContext, tripwireContext]);
+  const store = useMemo<StoreValue>(() => ({ real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, setNicheContext, isUnpackDone, isNicheAccepted, productContext, setProductContext, leadMagnetContext, setLeadMagnetContext, tripwireContext, setTripwireContext, funnelContext, setFunnelContext }), [real, loaded, set, refreshData, launches, activeLaunchId, setActiveLaunchId, refreshLaunches, nicheContext, isUnpackDone, isNicheAccepted, productContext, leadMagnetContext, tripwireContext, funnelContext]);
 
   return (
     <AuthCtx.Provider value={auth}>

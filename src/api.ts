@@ -225,6 +225,12 @@ export const api = {
   /** Получить текущий трипваер. */
   getTripwire: (id: number) =>
     apiFetch<Record<string, unknown>>(`/launches/${id}/tripwire`),
+  /** Сгенерировать воронку продаж (стадии, бенчмарки, оптимизация, вердикт ИИ). */
+  generateFunnel: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/funnel`, { method: "POST", body: {} }),
+  /** Получить текущую воронку. */
+  getFunnel: (id: number) =>
+    apiFetch<Record<string, unknown>>(`/launches/${id}/funnel`),
 
   /** Получить текущую подписку и историю платежей. */
   getPayments: () =>
