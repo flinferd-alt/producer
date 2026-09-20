@@ -1,6 +1,6 @@
 # ПРОДЮСЕР.AI — платформа ИИ-продюсирования онлайн-курсов
 
-**Версия:** 0.2.6 · **API:** https://producer-ai.ru/api · **Хостинг:** Beget (PHP 8.x + PostgreSQL)
+**Версия:** 0.2.7 · **API:** https://producer-ai.ru/api · **Хостинг:** Beget (PHP 8.x + PostgreSQL)
 
 SaaS-платформа для запуска инфопродуктов под управлением ИИ-агентов: от распаковки эксперта и анализа ниши до продуктовой линейки, лид-магнита, трипваера и приёма платежей.
 
@@ -11,6 +11,7 @@ SaaS-платформа для запуска инфопродуктов под 
 - **Стратегия продукта** — программа, тарифы, юнит-экономика, риски (`→ product`)
 - **Лид-магнит** — 3 варианта A/B/C + вердикт ИИ
 - **Трипваер** — оффер, цена, OTO, вердикт ИИ (`→ funnel`)
+- **Воронка продаж** — ИИ-генерация: 5 этапов с конверсиями и бенчмарками, точки оптимизации, трафик/цена, вердикт и рекомендации; симулятор юнит-экономики live (`→ traffic`)
 - **Freemium-монетизация** — 1 бесплатный запуск, тариф Pro через ЮKassa, отмена/возврат
 - **Auth** — JWT access (15 мин) + refresh (30 дней, httpOnly cookie), регистрация, rate-limit
 - **Роли** — `user` / `owner` (мастер-панель)
@@ -22,7 +23,7 @@ SaaS-платформа для запуска инфопродуктов под 
 | Free | 0 ₽ | 1 запуск, базовые функции | `free` |
 | Pro | 4 900 ₽/мес | полный доступ, ИИ-генерации | `pro` (30 дней, авто-понижение по cron) |
 
-Цепочка этапов запуска: `unpacking → brief_saved → niche_accepted → product → funnel → traffic → sales` (разделы Funnel/Ads/Stats/Agents пока на демо-данных).
+Цепочка этапов запуска: `unpacking → brief_saved → niche_accepted → product → funnel → traffic → sales` (Ads/Stats/Agents пока на демо-данных).
 
 ## Архитектура
 
@@ -35,7 +36,7 @@ public_html/api/ — PHP 8.x REST API (PDO, prepared statements)
    ▼
 PostgreSQL (Beget) — users, launches, briefs, niche_snapshots, payments, …
    │
-   ├──► YandexGPT (llm.api.cloud.yandex.net) — брифы, ниши, продукт, ЛМ, трипваер
+   ├──► YandexGPT (llm.api.cloud.yandex.net) — брифы, ниши, продукт, ЛМ, трипваер, воронка
    ├──► Wordstat (search_api.php) — частотность запросов ниши
    └──► ЮKassa (api.yookassa.ru) — платежи + webhook с верификацией через API
 ```
@@ -81,6 +82,7 @@ PostgreSQL (Beget) — users, launches, briefs, niche_snapshots, payments, …
 6. sql/migration_subscription_v3.sql   # payments: refunded_at, cancel_at, payment_method_id
 7. sql/migration_product.sql           # product_snapshots (ИИ-стратегия продукта)
 8. sql/migration_leadmagnet_tripwire.sql # leadmagnet_snapshots, tripwire_snapshots
+9. sql/migration_funnel.sql      # funnel_snapshots (ИИ-воронка продаж)
 ```
 
 Ключевые таблицы:
@@ -94,6 +96,7 @@ PostgreSQL (Beget) — users, launches, briefs, niche_snapshots, payments, …
 | `product_snapshots` | ИИ-стратегия: позиционирование, модули, тарифы, юнит-экономика, риски |
 | `leadmagnet_snapshots` | 3 варианта ЛМ A/B/C + вердикт ИИ + recommended_idx |
 | `tripwire_snapshots` | оффер трипваера, цены, конверсии, OTO |
+| `funnel_snapshots` | ИИ-воронка: 5 этапов (stages+optimized), traffic, price, ai_verdict, recommendations |
 | `payments` | платежи ЮKassa: yookassa_id, user_id, tariff, amount, status, metadata, refunded_at |
 | `app_data` | key/value JSONB — воронка, каналы, интеграции, токены, чек-лист |
 | `refresh_tokens`, `login_attempts` | ротация refresh-токенов, rate-limit входа |
@@ -122,6 +125,7 @@ PostgreSQL (Beget) — users, launches, briefs, niche_snapshots, payments, …
 | GET/POST | `/launches/:id/product` | ИИ-стратегия продукта: программа, тарифы, экономика |
 | GET/POST | `/launches/:id/leadmagnet` | лид-магнит: 3 варианта + вердикт ИИ |
 | GET/POST | `/launches/:id/tripwire` | трипваер: оффер, OTO, вердикт ИИ |
+| GET/POST | `/launches/:id/funnel` | ИИ-воронка: этапы+конверсии+бенчмарки, оптимизация, вердикт (`→ traffic`) |
 | GET/PUT | `/data` | данные кабинета (app_data) |
 
 ### Платежи и подписка
@@ -219,13 +223,14 @@ php scripts/create_owner.php '<пароль>' && rm scripts/create_owner.php
 |---|---|
 | 0.2.0–0.2.5 | freemium, ЮKassa, product/leadmagnet/tripwire (ИИ-генерации), launches.user_id, поиск |
 | 0.2.6 | вебхук ЮKassa v2 (верификация, идемпотентность), cron-понижение подписок, README 0.2.x |
+| 0.2.7 | воронка продаж end-to-end: funnel_snapshots, `POST/GET /launches/:id/funnel`, фронт на живом API (симулятор юнит-экономики + ИИ-оптимизация), чистка демо-констант |
 
 ## Известные ограничения (roadmap)
 
-- Разделы Funnel / Ads / Stats / Agents — демо-данные, генерация воронки в разработке
+- Разделы Ads / Stats / Agents — демо-данные (следующий этап разработки)
 - Trial 7 дней описан в миграции, но не реализован
 - Рекуррентные платежи — убраны до согласования с ЮMoney (payment_method_id сохраняется)
 
 ---
 
-*Актуально для версии 0.2.6. Синхронизировано с CONTEXT.md.*
+*Актуально для версии 0.2.7. Синхронизировано с CONTEXT.md.*
